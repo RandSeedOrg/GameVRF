@@ -1,0 +1,21 @@
+{
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=7.0.0"
+  },
+  "name": "game-vrf",
+  "scripts": {
+
+  },
+  "type": "module",
+  "dependencies": {
+  },
+  "workspaces": {
+    "packages": [
+      "apps/game-verify"
+    ],
+    "nohoist": [
+      "**/**"
+    ]
+  }
+}
