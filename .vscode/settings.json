@@ -1,0 +1,27 @@
+{
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "*.env": "$(capture).env.*",
+    "CHANGELOG.md": "CHANGELOG*",
+    "package.json": "package-lock.json,LICENSE,.gitattributes,.gitignore,README*,.npmrc,.browserslistrc,postcss*,.dockerignore,deploy-*.sh,generate-*.sh,canister_ids.json",
+  },
+  "cSpell.words": [
+    "Datelike",
+    "Nanos",
+    "Playboard",
+    "Poweroff",
+    "scopeguard",
+    "soldout",
+    "Subaccount",
+    "Unstake",
+    "unstaked",
+    "UNSTAKING"
+  ],
+  "remote.WSL.fileWatcher.polling": true,
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/node_modules/**": true,
+    "**/target/**": true
+  }
+}

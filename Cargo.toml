@@ -1,0 +1,49 @@
+[workspace]
+members = [
+  "canisters/random-oracle",
+  "canisters/game-verify"
+]
+resolver = "2"
+
+[workspace.dependencies]
+candid = "0.10.17"
+ic-cdk = "0.18.5"
+ic-cdk-macros = "0.18.5"
+ic-cdk-timers = "0.12.2" # Feel free to remove this dependency if you don't need timers
+ic-stable-structures = "0.7.0"
+ic_principal = "0.1.1"# needed for canisters that use candid
+
+ic-ledger-types = "0.15.0"
+sha2 = "0.10.9"
+
+strum = "0.27.2"
+strum_macros = "0.27.2"
+
+serde = "1.0.216"
+serde_bytes = "0.11.15"
+serde_cbor = "0.11.2"
+serde_json = "1.0.140"
+serde_repr = "0.1.19"
+serde_tokenstream = "0.2.2"
+
+proc-macro2 = "1.0.95"
+quote = "1.0.40"
+syn = "2.0.106"
+
+# Big number libraries
+bigdecimal = "0.4.8"
+num-bigint = "0.4.6"
+
+# Random number generation
+rand = "0.9.1"
+rand_chacha = "0.9.0"
+
+# Time utils
+chrono = { version = "0.4.41", default-features = false, features = [
+    "alloc",
+    "clock",
+    "serde",
+]}
+
+# Scope guard recover from panic
+scopeguard = "1.2.0"

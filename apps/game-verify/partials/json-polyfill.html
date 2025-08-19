@@ -1,0 +1,48 @@
+<script>
+  (function(window, undefined) {
+    var originJSON = {
+      stringify: JSON.stringify,
+      parse: JSON.parse
+    };
+
+    var BIGINT_REGEXP = /^-?\d+n$/;
+
+    window.JSON.stringify = function(value, replacer, space) {
+      try {
+        return originJSON.stringify.call(window.JSON, value, (key, value) => {
+          if (typeof value === 'bigint') {
+            return value + 'n';
+          }
+
+          if (replacer) {
+            return replacer(key, value);
+          }
+
+          return value;
+        }, space);
+      } catch (e) {
+        console.error(`JSON.stringify('${value}') error:`, e);
+        throw e;
+      }
+    };
+     
+    window.JSON.parse = function(text, reviver) {
+      try {
+        return originJSON.parse.call(window.JSON, text, (key, value) => {
+          if (typeof value === 'string' && BIGINT_REGEXP.test(value)) {
+            return BigInt(value.slice(0, -1));
+          }
+
+          if (reviver) {
+            return reviver(key, value);
+          }
+
+          return value;
+        });
+      } catch (e) {
+        console.error(`JSON.parse('${text}') error:`, e);
+        throw e;
+      }
+    };
+  })(window);
+</script>
