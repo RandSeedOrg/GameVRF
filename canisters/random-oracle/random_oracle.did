@@ -1,0 +1,23 @@
+type BusinessType = variant {
+  LuckyNickel;
+  Daily4;
+  QuickQuid;
+  Unknown;
+  RoyalTreys;
+};
+type RandSeedVO = record {
+  idx : nat64;
+  seed : blob;
+  use_for : BusinessType;
+  created_by : text;
+  scene : Scene;
+  create_time : nat64;
+  public_time : nat64;
+};
+type Result = variant { Ok; Err : text };
+type Scene = variant { GenerateTicketPool; Unknown; Shuffle; DrawNumbers };
+service : {
+  generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
+  get_public_rand_seed : (nat64) -> (opt RandSeedVO) query;
+  public_rand_seed : (nat64) -> (Result);
+}
