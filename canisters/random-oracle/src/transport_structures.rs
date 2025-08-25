@@ -1,4 +1,4 @@
-use candid::{CandidType, Principal};
+use candid::CandidType;
 use serde::{Deserialize, Serialize};
 
 use crate::{stable_structures::{BusinessType, RandSeed, Scene}, TimestampNano};
