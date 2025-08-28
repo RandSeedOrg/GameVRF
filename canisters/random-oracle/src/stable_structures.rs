@@ -8,34 +8,20 @@ use crate::TimestampNano;
 
 #[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
 pub enum BusinessType {
-  Unknown,
   LuckyNickel,
   QuickQuid,
   RoyalTreys,
   Daily4,
 }
 
-impl From<&str> for BusinessType {
-  fn from(s: &str) -> Self {
-    match s {
-      "LuckyNickel" => BusinessType::LuckyNickel,
-      "QuickQuid" => BusinessType::QuickQuid,
-      "RoyalTreys" => BusinessType::RoyalTreys,
-      "Daily4" => BusinessType::Daily4,
-      _ => panic!("Unknown business type"),
-    }
-  }
-}
-
 impl Default for BusinessType {
   fn default() -> Self {
-    BusinessType::Unknown
+    BusinessType::LuckyNickel
   }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
 pub enum Scene {
-  Unknown,
   GenerateTicketPool,
   Shuffle,
   DrawNumbers,
@@ -43,7 +29,7 @@ pub enum Scene {
 
 impl Default for Scene {
   fn default() -> Self {
-    Scene::Unknown
+    Scene::Shuffle
   }
 }
 
