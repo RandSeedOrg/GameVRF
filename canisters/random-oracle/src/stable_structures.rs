@@ -75,7 +75,7 @@ impl RandSeed {
 }
 
 impl Storable for RandSeed {
-  fn to_bytes(&self) -> Cow<[u8]> {
+  fn to_bytes(&self) -> Cow<'_, [u8]> {
     Cow::Owned(Encode!(self).unwrap())
   }
 

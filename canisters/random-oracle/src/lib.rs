@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use ic_cdk::{update, query, api::{time, msg_caller}};
-use ic_stable_structures::{memory_manager::{MemoryManager, VirtualMemory}, BTreeMap as StableBTreeMap, Cell, DefaultMemoryImpl, Vec as StableVec};
+use ic_stable_structures::{memory_manager::{MemoryManager, VirtualMemory}, BTreeMap as StableBTreeMap, Cell, DefaultMemoryImpl};
 
 use crate::{ic_rand_utils::get_on_chain_seed, memory_ids::{RAND_SEED_MEMORY_ID, RAND_SEED_MEMORY_SEQ_MEMORY_ID}, stable_structures::{BusinessType, RandSeed, Scene}, transport_structures::RandSeedVO};
 
