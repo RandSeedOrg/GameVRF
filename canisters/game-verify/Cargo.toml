@@ -11,3 +11,5 @@ crate-type = ["cdylib"]
 [dependencies]
 candid = { workspace = true }
 ic-cdk = { workspace = true }
+
+game-algorithms = { path = "../../libraries/game-algorithms" }
