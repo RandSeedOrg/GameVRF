@@ -14,4 +14,5 @@ service : {
   generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
   get_public_rand_seed : (nat64) -> (opt RandSeedVO) query;
   public_rand_seed : (nat64) -> (Result);
+  public_rand_seeds : (vec nat64) -> (Result);
 }

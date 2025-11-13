@@ -80,6 +80,25 @@ fn public_rand_seed(index: u64) -> Result<(), String> {
   })
 }
 
+#[update]
+fn public_rand_seeds(indexes: Vec<u64>) -> Result<(), String> {
+  RAND_SEED_MAP.with(|seeds| {
+    let mut seeds = seeds.borrow_mut();
+    for index in indexes {
+      if let Some(mut seed) = seeds.get(&index) {
+        if seed.get_created_by() != msg_caller().to_text() {
+          return Err("Only the creator can publicize the seed".to_string());
+        }
+        seed.public_time = Some(time());
+        seeds.insert(index, seed);
+      } else {
+        return Err(format!("No seed found at index {}", index));
+      }
+    }
+    Ok(())
+  })
+}
+
 #[query]
 fn get_public_rand_seed(index: u64) -> Option<RandSeedVO> {
   RAND_SEED_MAP.with(|seeds| {
