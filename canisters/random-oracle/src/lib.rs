@@ -131,8 +131,9 @@ fn get_public_rand_seed(index: u64) -> Option<RandSeedVO> {
 #[query]
 fn get_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
   RAND_SEED_MAP.with(|seeds| {
+    let seeds = seeds.borrow();
     indexes.into_iter().map(|index| {
-      let seed = seeds.borrow().get(&index);
+      let seed = seeds.get(&index);
 
       if seed.is_none() {
         return None;
