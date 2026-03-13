@@ -1,9 +1,6 @@
-type Result = variant { Ok : blob; Err : text };
 service : {
   // Generate Daily4 balls based on four hex-encoded seeds
-  generate_daily4_ball_by_hex_seeds : (text, text, text, text, nat8, nat8) -> (
-      Result,
-    ) query;
+  generate_daily4_ball : (blob, nat8, nat8) -> (nat8) query;
   // Generate Daily4 balls based on four byte-array seeds
   generate_daily4_balls : (blob, blob, blob, blob, nat8, nat8) -> (blob) query;
 }
