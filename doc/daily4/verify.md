@@ -21,8 +21,8 @@ For each ball you will see:
 | **Calculated Ball** | The ball number that was derived from the seed |
 
 Daily4 has **4 balls**, and each ball is a single digit in the range **0 – 9**.
+![https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/ProvableRandomness.png]
 
-![Daily4 provable randomness results — seeds, generation time, and calculated balls](verify.png)
 
 ---
 
@@ -34,6 +34,8 @@ The official ICP verification canister dashboard provides two verification funct
 2. **Get 4 numbers by inputting 4 seeds** — verify all four balls at once by submitting all four seeds together.
 
 You can use either method. Both will return the same calculated ball values shown in the Daily4 draw panel.
+
+![Daily4 provable randomness results — seeds, generation time, and calculated balls](verify.png)
 
 > **Number range for Daily4**
 >
