@@ -2,7 +2,7 @@
 
 Daily4 uses **provable randomness** so that every completed draw can be independently verified by users.
 
-After each Daily4 draw is completed, users can view the seed values, generation time, and calculated ball result for each of the 4 balls. Users can then visit the **official ICP verification canister dashboard** to confirm that the displayed Daily4 numbers were generated correctly and fairly.
+After each Daily4 draw is completed, users can view the seed values, generation time, and calculated ball result for each of the 4 balls. Users can then visit the **Game Verify Canister Dashboard** to confirm that the displayed Daily4 numbers were generated correctly and fairly.
 
 ---
 
@@ -26,9 +26,9 @@ Daily4 has **4 balls**, and each ball is a single digit in the range **0 – 9**
 
 ---
 
-## 2. Verification dashboard overview
+## 2. Game Verify Canister dashboard overview
 
-The official ICP verification canister dashboard provides two verification functions:
+There are two verification functions through canister dashboard:
 
 1. **Get number by a single seed** — verify one ball at a time using one seed.
 2. **Get 4 numbers by inputting 4 seeds** — verify all four balls at once by submitting all four seeds together.
