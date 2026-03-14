@@ -30,8 +30,8 @@ Daily4 has **4 balls**, and each ball is a single digit in the range **0 – 9**
 
 There are two verification functions through canister dashboard:
 
-1. **Get number by a single seed** — verify one ball at a time using one seed.
-2. **Get 4 numbers by inputting 4 seeds** — verify all four balls at once by submitting all four seeds together.
+1. **generate_daily4_ball** — verify one ball at a time using one seed.
+2. **generate_daily4_balls** — verify all four balls at once by submitting all four seeds together.
 
 You can use either method. Both will return the same calculated ball values shown in the Daily4 draw panel.
 
@@ -41,18 +41,18 @@ You can use either method. Both will return the same calculated ball values show
 >
 > Each Daily4 ball is a single digit, so the valid range is **0 to 9**.
 > When entering range parameters in the dashboard, always use:
-> - **Lower bound / minimum:** `0`
-> - **Upper bound / maximum:** `9`
+> - **Range/min:** `0`
+> - **Rang/ max:** `9`
 
 ---
 
 ## 3. Step-by-step verification overview
 
 1. Wait until a Daily4 draw is completed.
-2. Open the draw's **Provable Randomness** panel and note the **Seed Values** and **Calculated Balls** for each ball.
-3. Go to the **official ICP verification canister dashboard**.
+2. Open past draw's **Provable Randomness** link and note the **Seed Values** and **Calculated Balls** for each ball.
+3. Click the **Game Verification Canister**.
 4. Choose a verification method (single seed or four seeds).
-5. Paste the seed(s) and set the range to `0` – `9`.
+5. Paste the seed(s) and set the range Min and Max to `0` – `9`.
 6. Run the function and compare the returned numbers to the **Calculated Balls** shown in Daily4.
 
 ---
@@ -66,12 +66,12 @@ Use this method to verify a single Daily4 ball individually.
 1. Open a completed Daily4 draw and open the **Provable Randomness** panel.
 2. Copy the **Seed Value** for the ball you want to verify.
 3. Note the **Calculated Ball** displayed for that seed.
-4. Go to the official ICP verification canister dashboard.
-5. Select **Get number by a single seed**.
+4. Go to the game verification canister dashboard.
+5. Select **generate_daily4_ball**.
 6. Paste the copied seed into the seed input field.
 7. Enter the Daily4 number range:
-   - minimum = `0`
-   - maximum = `9`
+   - min = `0`
+   - max = `9`
 8. Run the function.
 9. Compare the returned number with the **Calculated Ball** shown in Daily4.
 
@@ -89,12 +89,12 @@ Use this method to verify the complete Daily4 result in a single step.
 
 1. Open a completed Daily4 draw and open the **Provable Randomness** panel.
 2. Copy all **4 Seed Values** in the order they are displayed.
-3. Go to the official ICP verification canister dashboard.
-4. Select **Get 4 numbers by inputting 4 seeds**.
+3. Go to the game verification canister dashboard.
+4. Select **generate_daily4_balls**.
 5. Paste the 4 seeds into the 4 seed input fields, preserving the original order.
 6. Enter the Daily4 number range:
-   - minimum = `0`
-   - maximum = `9`
+   - min = `0`
+   - max = `9`
 7. Run the function.
 8. Compare the 4 returned numbers with the 4 **Calculated Balls** shown in Daily4.
 
