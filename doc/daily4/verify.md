@@ -21,7 +21,7 @@ For each ball you will see:
 | **Calculated Ball** | The ball number that was derived from the seed |
 
 Daily4 has **4 balls**, and each ball is a single digit in the range **0 – 9**.
-![https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/ProvableRandomness.png]
+![Disclosry of Seeds of Past Draws](ProvableRandomness.png)
 
 
 ---
