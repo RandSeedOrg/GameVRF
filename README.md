@@ -44,7 +44,7 @@ GameVRF/
 
 Detailed verification instructions for each game are listed below.
 
-- **Daily4** — `doc/daily4/verify.md`
+- **Daily4** — `[doc/daily4/verify.md](https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/verify.md)`
 
 
 ## Future games
