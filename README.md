@@ -53,4 +53,4 @@ When additional games support verification, their detailed instruction links sho
 
 Example:
 
-- **Game Name** — `doc/game-name/verify.md`
+- **Game Name** — `doc/game-name/game-namevrf.md`
