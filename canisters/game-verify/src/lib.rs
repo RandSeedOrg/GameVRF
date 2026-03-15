@@ -1,5 +1,7 @@
 pub mod daily4;
 
-pub use crate::daily4::HexString;
+use crate::daily4::GenerateDaily4BallRequest;
+use crate::daily4::GenerateDaily4BallsRequest;
+use crate::daily4::GenerateDaily4BallsResponse;
 
 ic_cdk::export_candid!();
