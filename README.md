@@ -21,7 +21,7 @@ The repository is organized by documentation and related implementation files.
 GameVRF/
 ├── doc/
 │   ├── daily4/
-│   │   ├── verify.md
+│   │   ├── daily4vrf.md
 │   │   ├── ProvableRandomness.png
 │   │   ├── verify.png
 │   │   ├── input1seed.png
@@ -44,7 +44,7 @@ GameVRF/
 
 Detailed verification instructions for each game are listed below.
 
-- **Daily4** — [doc/daily4/verify.md](https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/verify.md)
+- **Daily4** — [doc/daily4/daily4vrf.md](https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/daily4vrf.md))
 
 
 ## Future games
