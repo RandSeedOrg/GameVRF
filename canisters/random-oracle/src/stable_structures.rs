@@ -12,6 +12,7 @@ pub enum BusinessType {
   QuickQuid,
   RoyalTreys,
   Daily4,
+  Mines,
 }
 
 impl Default for BusinessType {
