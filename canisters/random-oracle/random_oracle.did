@@ -1,4 +1,10 @@
-type BusinessType = variant { LuckyNickel; Daily4; QuickQuid; RoyalTreys };
+type BusinessType = variant {
+  LuckyNickel;
+  Daily4;
+  QuickQuid;
+  Mines;
+  RoyalTreys;
+};
 type RandSeedVO = record {
   idx : nat64;
   seed : blob;
