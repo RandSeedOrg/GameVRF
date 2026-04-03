@@ -17,6 +17,20 @@ type GenerateDaily4BallsResponse = record {
   ball3 : nat8;
   ball4 : nat8;
 };
+type GenerateKenoClientRandomNumbersRequest = record {
+  max : opt nat8;
+  min : opt nat8;
+  count : nat64;
+  seed : blob;
+  client_timestamp : nat64;
+};
+type GenerateKenoNumbersRequest = record {
+  max : opt nat8;
+  min : opt nat8;
+  count : nat32;
+  seed : blob;
+  round : nat32;
+};
 service : {
   // Generate Daily4 balls based on four hex-encoded seeds
   generate_daily4_ball : (GenerateDaily4BallRequest) -> (nat8) query;
@@ -24,4 +38,10 @@ service : {
   generate_daily4_balls : (GenerateDaily4BallsRequest) -> (
       GenerateDaily4BallsResponse,
     ) query;
+  // Generate Keno numbers based on a seed and client timestamp
+  generate_keno_client_random_numbers : (
+      GenerateKenoClientRandomNumbersRequest,
+    ) -> (blob) query;
+  // Generate Keno numbers based on a seed and round
+  generate_keno_numbers : (GenerateKenoNumbersRequest) -> (blob) query;
 }
