@@ -1,13 +1,15 @@
-use rand::{distr::uniform::{SampleUniform}, Rng};
-use rand_chacha::ChaCha20Rng;
 use rand::SeedableRng;
+use rand::{distr::uniform::SampleUniform, Rng};
+use rand_chacha::ChaCha20Rng;
 
 pub trait ChaCha20RNGGenerator {
-  fn chacha20_rand(seed: [u8;32], min: Self, max: Self, count: usize) -> Vec<Self> where Self: Sized;
+  fn chacha20_rand(seed: [u8; 32], min: Self, max: Self, count: usize) -> Vec<Self>
+  where
+    Self: Sized;
 }
 
 impl ChaCha20RNGGenerator for u8 {
-  fn chacha20_rand(seed: [u8;32], min: Self, max: Self, count: usize) -> Vec<Self> {
+  fn chacha20_rand(seed: [u8; 32], min: Self, max: Self, count: usize) -> Vec<Self> {
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
@@ -18,7 +20,7 @@ impl ChaCha20RNGGenerator for u8 {
 }
 
 impl ChaCha20RNGGenerator for u16 {
-  fn chacha20_rand(seed: [u8;32], min: Self, max: Self, count: usize) -> Vec<Self> {
+  fn chacha20_rand(seed: [u8; 32], min: Self, max: Self, count: usize) -> Vec<Self> {
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
@@ -29,7 +31,7 @@ impl ChaCha20RNGGenerator for u16 {
 }
 
 impl ChaCha20RNGGenerator for u32 {
-  fn chacha20_rand(seed: [u8;32], min: Self, max: Self, count: usize) -> Vec<Self> {
+  fn chacha20_rand(seed: [u8; 32], min: Self, max: Self, count: usize) -> Vec<Self> {
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
@@ -40,7 +42,7 @@ impl ChaCha20RNGGenerator for u32 {
 }
 
 impl ChaCha20RNGGenerator for u64 {
-  fn chacha20_rand(seed: [u8;32], min: Self, max: Self, count: usize) -> Vec<Self> {
+  fn chacha20_rand(seed: [u8; 32], min: Self, max: Self, count: usize) -> Vec<Self> {
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
@@ -50,10 +52,9 @@ impl ChaCha20RNGGenerator for u64 {
   }
 }
 
-
-pub fn generate_numbers<T: SampleUniform + PartialOrd + Copy>(seed: [u8;32], min: T, max: T, count: usize) -> Vec<T> {
+pub fn generate_numbers<T: SampleUniform + PartialOrd + Copy>(seed: [u8; 32], min: T, max: T, count: usize) -> Vec<T> {
   let mut rng = ChaCha20Rng::from_seed(seed);
-  let mut result:Vec<T> = Vec::with_capacity(count);
+  let mut result: Vec<T> = Vec::with_capacity(count);
   for _ in 0..count {
     result.push(rng.random_range(min..=max));
   }
