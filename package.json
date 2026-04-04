@@ -4,6 +4,7 @@
     "npm": ">=7.0.0"
   },
   "name": "game-vrf",
+  "version": "0.0.0"
   "scripts": {
 
   },
