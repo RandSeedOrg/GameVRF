@@ -30,7 +30,7 @@ mod tests {
     let seed = [3u8; 32];
     let round = 1;
     let min = 1u8;
-    let max = 80u8;
+    let max = 40u8;
     let count = 20;
 
     let numbers = generate_numbers(seed, round, count, min, max);
@@ -46,7 +46,7 @@ mod tests {
     let seed = [5u8; 32];
     let round = 1;
     let min = 1u8;
-    let max = 80u8;
+    let max = 40u8;
     let count = 20;
 
     let numbers = generate_numbers(seed, round, count, min, max);
@@ -58,7 +58,7 @@ mod tests {
   fn test_generate_numbers_diff_rounds_diff_results() {
     let seed = [4u8; 32];
     let min = 1u8;
-    let max = 80u8;
+    let max = 40u8;
     let count = 20;
 
     let numbers_round1 = generate_numbers(seed, 1, count, min, max);

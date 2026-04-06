@@ -1,14 +1,20 @@
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-/// Mixes a 32-byte root seed with an arbitrary byte slice to generate a new 32-byte seed.
-/// 将 32 字节的根种子与任意字节切片混合，生成一个新的 32 字节种子。
+/// Mixes a 32-byte root seed with a byte slice to generate a new 32-byte seed.
+/// Only the first 32 bytes of `mix_data` are used; any additional bytes are ignored.
+/// 将 32 字节的根种子与一个字节切片混合，生成一个新的 32 字节种子。
+/// 仅 `mix_data` 的前 32 字节会参与混合；超出的字节将被忽略。
 ///
-/// This function uses XOR for initial mixing and then applies ChaCha20 PRNG to ensure cryptographic security and unpredictability.
-/// 该函数首先使用异或（XOR）进行初始混合，然后应用 ChaCha20 伪随机数生成器以确保密码学级别的安全性和不可预测性。
+/// This function uses XOR for the initial mixing and then applies ChaCha20 PRNG
+/// to ensure cryptographic security and unpredictability.
+/// 该函数首先使用异或（XOR）进行初始混合，然后应用 ChaCha20 伪随机数生成器
+/// 以确保密码学级别的安全性和不可预测性。
 pub fn seed_mix(mut seed: [u8; 32], mix_data: &[u8]) -> [u8; 32] {
-  // XOR the first few bytes of the seed with the provided data slice (up to 32 bytes)
-  // 将提供的字节数据（最多 32 字节）与种子进行异或操作
+    // XOR the seed with the provided data slice, using only the first 32 bytes.
+  // Extra bytes in `mix_data` are intentionally ignored.
+  // 将提供的字节切片与种子进行异或混合，但仅使用前 32 字节。
+  // `mix_data` 中超出的字节会被有意忽略。
   for (i, &b) in mix_data.iter().take(32).enumerate() {
     seed[i] ^= b;
   }
@@ -48,8 +54,8 @@ macro_rules! impl_seed_mixable_number {
   };
 }
 
-// Implement the trait for all supported unsigned integer types
-// 为所有受支持的无符号整数类型自动派生实现该 Trait
+// Implement the trait for all supported signed and unsigned integer types
+// 为所有受支持的有符号和无符号整数类型自动派生实现该 Trait
 impl_seed_mixable_number!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, usize);
 
 /// A generic public function to mix any supported numeric type into a seed.

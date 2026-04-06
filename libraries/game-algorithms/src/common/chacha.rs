@@ -162,7 +162,7 @@ mod tests {
   fn test_generate_unique_numbers_u8() {
     let seed = [9u8; 32];
     let min = 1u8;
-    let max = 80u8;
+    let max = 40u8;
     let count = 20;
     let numbers = generate_unique_numbers(seed, min, max, count);
 
