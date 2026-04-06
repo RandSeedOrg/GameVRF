@@ -1,5 +1,6 @@
 type BusinessType = variant {
   LuckyNickel;
+  Keno;
   Daily4;
   QuickQuid;
   Mines;

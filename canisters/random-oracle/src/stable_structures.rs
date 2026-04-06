@@ -13,6 +13,7 @@ pub enum BusinessType {
   RoyalTreys,
   Daily4,
   Mines,
+  Keno,
 }
 
 impl Default for BusinessType {
