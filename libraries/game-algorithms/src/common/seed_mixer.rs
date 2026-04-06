@@ -56,7 +56,7 @@ macro_rules! impl_seed_mixable_number {
 
 // Implement the trait for all supported signed and unsigned integer types
 // 为所有受支持的有符号和无符号整数类型自动派生实现该 Trait
-impl_seed_mixable_number!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, usize);
+impl_seed_mixable_number!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 
 /// A generic public function to mix any supported numeric type into a seed.
 /// 泛型的公共接口函数，支持将任意受支持的数字类型（如 u8, u32, u64 等）混入种子。
