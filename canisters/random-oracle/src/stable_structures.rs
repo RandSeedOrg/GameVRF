@@ -35,10 +35,44 @@ impl Default for Scene {
   }
 }
 
+pub const DEFAULT_SEED_POOL_TARGET_SIZE: u32 = 10;
+pub const DEFAULT_SEED_POOL_FAILURE_COOLDOWN_SECS: u64 = 60;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, CandidType)]
+pub struct SeedPoolConfig {
+  pub target_size: u32,
+  pub failure_cooldown_secs: u64,
+}
+
+impl Default for SeedPoolConfig {
+  fn default() -> Self {
+    Self {
+      target_size: DEFAULT_SEED_POOL_TARGET_SIZE,
+      failure_cooldown_secs: DEFAULT_SEED_POOL_FAILURE_COOLDOWN_SECS,
+    }
+  }
+}
+
+impl Storable for SeedPoolConfig {
+  fn to_bytes(&self) -> Cow<'_, [u8]> {
+    Cow::Owned(Encode!(self).unwrap())
+  }
+
+  fn from_bytes(bytes: Cow<[u8]>) -> Self {
+    Decode!(bytes.as_ref(), Self).unwrap()
+  }
+
+  fn into_bytes(self) -> Vec<u8> {
+    Encode!(&self).unwrap()
+  }
+
+  const BOUND: Bound = Bound::Unbounded;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
 pub struct RandSeed {
   pub idx: Option<u64>,
-  pub seed: Option<[u8; 32]>,
+  pub seed: Option<crate::RawSeed>,
   pub public_time: Option<TimestampNano>,
   pub create_time: Option<TimestampNano>,
   pub created_by: Option<Principal>,
@@ -51,7 +85,7 @@ impl RandSeed {
     self.idx.unwrap_or_default()
   }
 
-  pub fn get_seed(&self) -> [u8; 32] {
+  pub fn get_seed(&self) -> crate::RawSeed {
     self.seed.unwrap_or_default()
   }
 
