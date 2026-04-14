@@ -7,7 +7,7 @@ use crate::{stable_structures::{BusinessType, RandSeed, Scene}, TimestampNano};
 #[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
 pub struct RandSeedVO {
   pub idx: u64,
-  pub seed: [u8; 32],
+  pub seed: crate::RawSeed,
   pub public_time: TimestampNano,
   pub create_time: TimestampNano,
   pub created_by: String,

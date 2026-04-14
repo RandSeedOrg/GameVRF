@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use ic_cdk::{
-  api::{msg_caller, time},
+  api::{is_controller, msg_caller, time},
   query, update,
 };
 use ic_stable_structures::{
@@ -11,20 +11,21 @@ use ic_stable_structures::{
 
 use crate::{
   ic_rand_utils::get_on_chain_seed,
-  memory_ids::{RAND_SEED_MEMORY_ID, RAND_SEED_MEMORY_SEQ_MEMORY_ID},
-  stable_structures::{BusinessType, RandSeed, Scene},
+  memory_ids::{RAND_SEED_MEMORY_ID, RAND_SEED_MEMORY_SEQ_MEMORY_ID, SEED_POOL_CONFIG_MEMORY_ID},
+  stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
   transport_structures::RandSeedVO,
 };
 
 mod ic_rand_utils;
 mod memory_ids;
-
+mod seed_pool;
 mod stable_structures;
 mod transport_structures;
 
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 type TimestampNano = u64;
 type RandSeedId = u64;
+pub type RawSeed = [u8; 32];
 pub type SeedIdGenerator = RefCell<Cell<RandSeedId, Memory>>;
 
 thread_local! {
@@ -37,6 +38,13 @@ thread_local! {
       MEMORY_MANAGER.with(|m| m.borrow().get(RAND_SEED_MEMORY_ID)),
     )
   );
+
+  pub static SEED_POOL_CONFIG: RefCell<Cell<SeedPoolConfig, Memory>> = RefCell::new(
+    Cell::init(
+      MEMORY_MANAGER.with(|m| m.borrow().get(SEED_POOL_CONFIG_MEMORY_ID)),
+      SeedPoolConfig::default(),
+    )
+  );
 }
 
 pub fn new_seed_id(id_seq: &SeedIdGenerator) -> RandSeedId {
@@ -47,10 +55,7 @@ pub fn new_seed_id(id_seq: &SeedIdGenerator) -> RandSeedId {
   id
 }
 
-#[update]
-async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
-  let on_chain_seed = get_on_chain_seed().await;
-
+fn store_rand_seed(seed_bytes: RawSeed, use_for: BusinessType, scene: Scene) -> RandSeedVO {
   let seed_id = RAND_SEED_ID.with(|id_gen| new_seed_id(id_gen));
 
   RAND_SEED_MAP.with(|seeds| {
@@ -58,7 +63,7 @@ async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
 
     let seed = RandSeed {
       idx: Some(seed_id),
-      seed: Some(on_chain_seed),
+      seed: Some(seed_bytes),
       public_time: None,
       create_time: Some(time()),
       created_by: Some(msg_caller()),
@@ -70,6 +75,60 @@ async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
 
     seed.into()
   })
+}
+
+async fn acquire_seed_from_pool() -> RawSeed {
+  if let Some(seed) = seed_pool::pop() {
+    seed_pool::trigger_refill();
+    return seed;
+  }
+
+  seed_pool::trigger_refill();
+  get_on_chain_seed().await
+}
+
+fn init_runtime() {
+  seed_pool::apply_config_change();
+}
+
+#[ic_cdk::init]
+fn init() {
+  init_runtime();
+}
+
+#[ic_cdk::post_upgrade]
+fn post_upgrade() {
+  init_runtime();
+}
+
+#[update]
+async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+  let seed = get_on_chain_seed().await;
+  store_rand_seed(seed, use_for, scene)
+}
+
+#[update]
+async fn generate_seed_from_pool(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+  let seed = acquire_seed_from_pool().await;
+  store_rand_seed(seed, use_for, scene)
+}
+
+#[query]
+fn get_seed_pool_config() -> SeedPoolConfig {
+  SEED_POOL_CONFIG.with(|config| *config.borrow().get())
+}
+
+#[update]
+fn update_seed_pool_config(config: SeedPoolConfig) -> Result<(), String> {
+  if !is_controller(&msg_caller()) {
+    return Err("Only controllers can update seed pool config".to_string());
+  }
+
+  SEED_POOL_CONFIG.with(|current| {
+    current.borrow_mut().set(config);
+  });
+  seed_pool::apply_config_change();
+  Ok(())
 }
 
 #[update]
