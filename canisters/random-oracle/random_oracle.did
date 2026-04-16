@@ -21,12 +21,24 @@ type SeedPoolConfig = record {
   failure_cooldown_secs : nat64;
   target_size : nat32;
 };
+type SeedPoolStatus = record {
+  pool_size : nat64;
+  in_flight : nat64;
+  last_failure_at : opt nat64;
+};
 service : () -> {
   generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
   generate_seed_from_pool : (BusinessType, Scene) -> (RandSeedVO);
   get_public_rand_seed : (nat64) -> (opt RandSeedVO) query;
   get_public_rand_seeds : (vec nat64) -> (vec opt RandSeedVO) query;
   get_seed_pool_config : () -> (SeedPoolConfig) query;
+  // 查询 seed pool 三个运行时存储的当前状态：
+  // - pool_size: POOL 中已就绪的种子数量
+  // - in_flight: IN_FLIGHT 正在异步获取中的任务数
+  // - last_failure_at: LAST_FAILURE_AT 最近一次补充失败的时间戳（nanoseconds），None 表示无失败记录
+  // 
+  // 仅在 sensitive_debug_api feature 开启时可用
+  get_seed_pool_status : () -> (SeedPoolStatus) query;
   public_rand_seed : (nat64) -> (Result);
   public_rand_seeds : (vec nat64) -> (Result);
   update_seed_pool_config : (SeedPoolConfig) -> (Result);
