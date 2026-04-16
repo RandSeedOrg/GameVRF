@@ -133,6 +133,9 @@ fn get_seed_pool_config() -> SeedPoolConfig {
 /// - pool_size: POOL 中已就绪的种子数量
 /// - in_flight: IN_FLIGHT 正在异步获取中的任务数
 /// - last_failure_at: LAST_FAILURE_AT 最近一次补充失败的时间戳（nanoseconds），None 表示无失败记录
+///
+/// 仅在 sensitive_debug_api feature 开启时可用
+#[cfg(feature = "sensitive_debug_api")]
 #[query]
 fn get_seed_pool_status() -> SeedPoolStatus {
   SeedPoolStatus {
