@@ -40,8 +40,8 @@ pub const DEFAULT_SEED_POOL_FAILURE_COOLDOWN_SECS: u64 = 60;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, CandidType)]
 pub struct SeedPoolConfig {
-  pub target_size: u32,
-  pub failure_cooldown_secs: u64,
+  pub target_size: u32,             // pool size
+  pub failure_cooldown_secs: u64,   // unit:second
 }
 
 impl Default for SeedPoolConfig {

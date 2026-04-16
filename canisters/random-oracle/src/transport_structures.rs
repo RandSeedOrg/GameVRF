@@ -3,6 +3,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{stable_structures::{BusinessType, RandSeed, Scene}, TimestampNano};
 
+#[derive(Debug, Clone, CandidType, Serialize, Deserialize)]
+pub struct SeedPoolStatus {
+  pub pool_size: u64,
+  pub in_flight: u64,
+  pub last_failure_at: Option<u64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
 pub struct RandSeedVO {
