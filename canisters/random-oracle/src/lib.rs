@@ -98,11 +98,6 @@ async fn acquire_seed_from_pool() -> RawSeed {
   get_on_chain_seed().await
 }
 
-#[ic_cdk::post_upgrade]
-fn post_upgrade() {
-  seed_pool::trigger_refill();
-}
-
 #[update]
 async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
   let seed = get_on_chain_seed().await;

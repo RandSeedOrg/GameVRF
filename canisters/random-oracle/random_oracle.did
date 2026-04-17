@@ -26,7 +26,7 @@ type SeedPoolStatus = record {
   in_flight : nat64;
   last_failure_at : opt nat64;
 };
-service : () -> {
+service : {
   generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
   generate_seed_from_pool : (BusinessType, Scene) -> (RandSeedVO);
   get_public_rand_seed : (nat64) -> (opt RandSeedVO) query;
