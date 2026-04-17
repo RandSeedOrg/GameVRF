@@ -98,18 +98,9 @@ async fn acquire_seed_from_pool() -> RawSeed {
   get_on_chain_seed().await
 }
 
-fn init_runtime() {
-  seed_pool::apply_config_change();
-}
-
-#[ic_cdk::init]
-fn init() {
-  init_runtime();
-}
-
 #[ic_cdk::post_upgrade]
 fn post_upgrade() {
-  init_runtime();
+  seed_pool::trigger_refill();
 }
 
 #[update]
