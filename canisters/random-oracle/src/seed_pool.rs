@@ -63,6 +63,7 @@ pub fn get_in_flight() -> usize {
 }
 
 /// 返回最近一次补充失败的时间戳（IC nanoseconds）。
+#[cfg(feature = "sensitive_debug_api")]
 pub fn get_last_failure_at() -> Option<u64> {
   LAST_FAILURE_AT.with(|t| *t.borrow())
 }
