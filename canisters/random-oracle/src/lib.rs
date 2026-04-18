@@ -22,7 +22,11 @@ use crate::{
   ic_rand_utils::get_on_chain_seed,
   memory_ids::{RAND_SEED_MEMORY_ID, RAND_SEED_MEMORY_SEQ_MEMORY_ID, SEED_POOL_CONFIG_MEMORY_ID},
   stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
-  transport_structures::{RandSeedVO, SeedPoolStatus},
+  transport_structures::RandSeedVO,
+};
+#[cfg(feature = "sensitive_debug_api")]
+use crate::{
+  transport_structures::SeedPoolStatus,
 };
 
 mod ic_rand_utils;
