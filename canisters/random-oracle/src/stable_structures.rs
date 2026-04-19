@@ -14,6 +14,7 @@ pub enum BusinessType {
   Daily4,
   Mines,
   Keno,
+  FruitsGarden,
 }
 
 impl Default for BusinessType {
