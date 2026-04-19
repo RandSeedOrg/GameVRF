@@ -104,15 +104,16 @@ async fn acquire_seed_from_pool() -> RawSeed {
 
 #[update]
 async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
-  let seed = get_on_chain_seed().await;
-  store_rand_seed(seed, use_for, scene)
-}
-
-#[update]
-async fn generate_seed_from_pool(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+  // let seed = get_on_chain_seed().await;
   let seed = acquire_seed_from_pool().await;
   store_rand_seed(seed, use_for, scene)
 }
+
+// #[update]
+// async fn generate_seed_from_pool(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+//   let seed = acquire_seed_from_pool().await;
+//   store_rand_seed(seed, use_for, scene)
+// }
 
 #[query]
 fn get_seed_pool_config() -> SeedPoolConfig {
