@@ -23,7 +23,6 @@ type SeedPoolConfig = record {
 };
 service : {
   generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
-  generate_seed_from_pool : (BusinessType, Scene) -> (RandSeedVO);
   get_public_rand_seed : (nat64) -> (opt RandSeedVO) query;
   get_public_rand_seeds : (vec nat64) -> (vec opt RandSeedVO) query;
   get_seed_pool_config : () -> (SeedPoolConfig) query;
