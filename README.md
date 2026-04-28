@@ -1,34 +1,186 @@
 # GameVRF
 
-Public verification resources for RandSeed game randomness, game algorithms, and Internet Computer (IC) canister integrations.
+RandSeed.org is building an open, verifiable randomness layer for on-chain and online games. GameVRF is part of that mission: it gives players, developers, partners, and auditors a public place to inspect how RandSeed game outcomes are produced from randomness inputs. Instead of asking users to trust a black box, this repository publishes the core game algorithms, verification canister code, and verification app structure so results can be independently reproduced.
 
-GameVRF is intended to make game result generation transparent and independently verifiable. It includes Rust algorithm libraries, IC canisters, a React/Vite verification app, and game-specific verification documentation.
+This repository is both an engineering resource and a transparency resource. If someone wants to check game integrity, they can review the Rust implementation, run the deterministic tests, reproduce a game result from the public inputs, and even deploy or call the verification logic locally for their own experiments.
 
-## What is in this repository
+## What this repository provides
 
-- **Game algorithm implementations** used to reproduce supported game outcomes from randomness inputs.
-- **Verification canisters** for exposing or validating game verification logic on the Internet Computer.
-- **Random oracle canister** code used by the verification flow.
-- **Game verification web app** for user-facing verification workflows.
-- **Documentation and screenshots** explaining how to verify supported games.
+- **Open game algorithms** for supported RandSeed games.
+- **Deterministic result generation** from public randomness inputs such as seeds and round numbers.
+- **Shared Rust library code** that can be reviewed, tested, reused, or embedded in a verifier.
+- **Internet Computer canister code** for exposing verification functions.
+- **A web verification app** for user-facing verification workflows.
+- **Game documentation** that explains how a player or auditor can reproduce supported game results.
 
 ## Repository structure
 
 ```text
 GameVRF/
 ├── apps/
-│   └── game-verify/          # React + TypeScript + Vite verification app
+│   └── game-verify/                    # React + TypeScript + Vite verification app
 ├── canisters/
-│   ├── game-verify/          # IC canister for game verification APIs
-│   └── random-oracle/        # IC canister for randomness/oracle functionality
+│   ├── game-verify/                    # IC canister exposing game verification APIs
+│   │   └── src/
+│   │       ├── daily4.rs               # Daily4 verification canister functions
+│   │       ├── keno.rs                 # Keno verification canister functions
+│   │       └── lib.rs                  # Canister entry module
+│   └── random-oracle/                  # Randomness/oracle canister code
 ├── doc/
-│   ├── daily4/               # Daily4 verification guide and screenshots
-│   └── Mines/                # Mines verification documentation placeholder
+│   ├── daily4/                         # Daily4 verification guide and screenshots
+│   └── Mines/                          # Mines verification documentation placeholder
 ├── libraries/
-│   └── game-algorithms/      # Shared Rust game algorithm library
-├── Cargo.toml                # Rust workspace configuration
-├── package.json              # npm workspace configuration
+│   └── game-algorithms/                # Shared Rust game algorithm library
+│       └── src/
+│           ├── common/                 # Shared randomness, seed, and helper logic
+│           │   ├── chacha.rs           # ChaCha-based deterministic number generation
+│           │   ├── seed_format.rs      # Seed formatting helpers
+│           │   └── seed_mixer.rs       # Seed mixing by round/game input
+│           ├── daily4/                 # Daily4 algorithm implementation
+│           ├── keno/                   # Keno algorithm implementation
+│           │   └── mod.rs              # Keno deterministic number generation
+│           ├── mines/                  # Mines algorithm implementation
+│           └── lib.rs                  # Public algorithm modules
+├── Cargo.toml                          # Rust workspace configuration
+├── package.json                        # npm workspace configuration
 └── README.md
+```
+
+The most important folder for checking game integrity is:
+
+```text
+libraries/game-algorithms/src/
+```
+
+That folder contains the deterministic game logic. For example, Keno lives here:
+
+```text
+libraries/game-algorithms/src/keno/mod.rs
+```
+
+The Keno algorithm takes a 32-byte seed, mixes it with a round value, and uses the shared ChaCha-based generator to produce a fixed count of unique numbers inside the configured range. Because the same inputs always produce the same output, anyone can reproduce and compare the result.
+
+## How to verify game integrity
+
+A reader, player, or auditor can verify a supported game by following this process:
+
+1. **Find the game algorithm**
+   - Keno: `libraries/game-algorithms/src/keno/mod.rs`
+   - Daily4: `libraries/game-algorithms/src/daily4/mod.rs`
+   - Mines: `libraries/game-algorithms/src/mines/mod.rs`
+
+2. **Review the shared randomness helpers**
+   - Seed mixing: `libraries/game-algorithms/src/common/seed_mixer.rs`
+   - Deterministic number generation: `libraries/game-algorithms/src/common/chacha.rs`
+   - Seed formatting: `libraries/game-algorithms/src/common/seed_format.rs`
+
+3. **Collect the public verification inputs**
+   - Game name
+   - Round or draw identifier
+   - Public seed/randomness value
+   - Any game-specific parameters, such as number range or draw count
+   - Published game result to compare against
+
+4. **Run the same algorithm locally**
+   - The Rust code is deterministic.
+   - The same seed, round, and parameters should reproduce the same game result.
+
+5. **Compare outputs**
+   - If the locally reproduced output matches the published game result, the result is consistent with the open algorithm and public inputs.
+   - If it does not match, the input data, game parameters, or published result should be investigated.
+
+## Keno verification example
+
+The Keno source is in `libraries/game-algorithms/src/keno/mod.rs`.
+
+At a high level, Keno verification checks that:
+
+1. A 32-byte root seed is provided.
+2. The game round is mixed into that seed.
+3. The mixed seed is passed into the shared ChaCha-based generator.
+4. The generator returns the configured number of unique balls within the allowed range.
+5. The reproduced numbers match the published Keno result.
+
+The public Keno function is:
+
+```rust
+pub fn generate_numbers<T: SeedMixableNumber>(
+  seed: [u8; 32],
+  round: T,
+  count: usize,
+  min: u8,
+  max: u8,
+) -> Vec<u8>
+```
+
+This makes the integrity check straightforward: given the same `seed`, `round`, `count`, `min`, and `max`, the function must produce the same Keno numbers.
+
+## Run verification code locally
+
+You can inspect and run the Rust verification logic locally with Cargo.
+
+### Run all Rust tests
+
+```bash
+cargo test --workspace
+```
+
+### Run only the game algorithm library tests
+
+```bash
+cargo test -p game-algorithms
+```
+
+### Run checks used by contributors
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets
+cargo test --workspace
+```
+
+These commands let a reviewer confirm that the deterministic algorithms and included test cases behave as expected.
+
+## Try the verification function locally
+
+The game algorithms are written as a reusable Rust library under `libraries/game-algorithms`. A developer can create a small local Rust program or test that imports the library and calls a function such as `keno::generate_numbers` with known inputs.
+
+For canister-based verification, the repository includes IC canister crates under `canisters/`:
+
+- `canisters/game-verify` depends on `libraries/game-algorithms` and exposes game verification functions.
+- `canisters/random-oracle` contains randomness/oracle canister code.
+
+This repository does not currently include a root `dfx.json`, so local IC deployment may require adding a local DFX configuration or importing these canister crates into a local DFX project. Once configured, a developer can deploy the verification canister locally, call the Keno or Daily4 verification methods, and compare the returned result with the published game output.
+
+## Verification app
+
+The frontend verification app is in:
+
+```text
+apps/game-verify/
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the app locally:
+
+```bash
+npm --workspace apps/game-verify run start
+```
+
+Other available app commands:
+
+```bash
+npm --workspace apps/game-verify run start:dev
+npm --workspace apps/game-verify run start:test
+npm --workspace apps/game-verify run build:dev
+npm --workspace apps/game-verify run build:test
+npm --workspace apps/game-verify run build:prod
+npm --workspace apps/game-verify run lint
 ```
 
 ## Supported verification guides
@@ -37,91 +189,28 @@ GameVRF/
 | --- | --- | --- |
 | Daily4 | [doc/daily4/daily4vrf.md](https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/daily4vrf.md) | Available |
 | Mines | [doc/Mines/minesvrf.md](https://github.com/RandSeedOrg/GameVRF/blob/main/doc/Mines/minesvrf.md) | Placeholder |
+| Keno | Source: [libraries/game-algorithms/src/keno/mod.rs](https://github.com/RandSeedOrg/GameVRF/blob/main/libraries/game-algorithms/src/keno/mod.rs) | Algorithm available |
 
 When additional games support public verification, add their guide links to this table.
 
-## Technology stack
+## Why this matters
 
-### Rust / IC canisters
+Game integrity depends on reproducibility. RandSeed.org uses this repository to make the verification path visible:
 
-- Rust workspace managed by `Cargo.toml`
-- IC canister crates under `canisters/`
-- Shared game algorithms under `libraries/game-algorithms/`
-- Key workspace dependencies include `candid`, `ic-cdk`, `ic-stable-structures`, `serde`, `sha2`, `rand`, and `rand_chacha`
+- The randomness transformation is public.
+- The game algorithm is public.
+- The canister integration code is public.
+- The verification app is public.
+- The result can be reproduced independently.
 
-### Frontend
-
-- React
-- TypeScript
-- Vite
-- npm workspaces
-- DFINITY JavaScript packages for IC integration
-
-## Getting started
-
-### Prerequisites
-
-- Rust toolchain compatible with `rust-toolchain.toml`
-- Node.js and npm
-  - Team baseline: Node.js `>=20.19.0`
-  - The current root package manifest is permissive, but contributors should prefer the team baseline for consistency.
-
-### Install frontend dependencies
-
-```bash
-npm install
-```
-
-### Run the verification app locally
-
-```bash
-npm --workspace apps/game-verify run start
-```
-
-Environment-specific modes are also available:
-
-```bash
-npm --workspace apps/game-verify run start:dev
-npm --workspace apps/game-verify run start:test
-```
-
-### Build the verification app
-
-```bash
-npm --workspace apps/game-verify run build:dev
-npm --workspace apps/game-verify run build:test
-npm --workspace apps/game-verify run build:prod
-```
-
-### Lint the verification app
-
-```bash
-npm --workspace apps/game-verify run lint
-```
-
-### Rust checks
-
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo test --workspace
-```
-
-## Verification workflow
-
-A typical verification flow is:
-
-1. Open the game-specific verification guide in `doc/`.
-2. Collect the required public inputs described by that guide, such as round identifiers, randomness seeds, or result data.
-3. Reproduce the result using the documented algorithm and/or verification app.
-4. Compare the reproduced result against the published game result.
-
-For a concrete example, see the Daily4 guide: [doc/daily4/daily4vrf.md](https://github.com/RandSeedOrg/GameVRF/blob/main/doc/daily4/daily4vrf.md).
+That transparency helps players trust the games they play and helps developers or auditors confirm that RandSeed game results are generated by deterministic, reviewable logic rather than hidden server-side behavior.
 
 ## Development notes
 
 - Keep game algorithms deterministic and reproducible.
 - Prefer integer math for game outcome, odds, payout, and verification logic.
+- Keep shared game logic in `libraries/game-algorithms` when possible.
+- Keep canister APIs in `canisters/game-verify` focused on exposing verification behavior.
 - Do not mutate canister state from query methods.
 - Avoid holding mutable state across inter-canister `await` calls.
 - Keep Candid types and generated bindings consistent with the canister interfaces.
