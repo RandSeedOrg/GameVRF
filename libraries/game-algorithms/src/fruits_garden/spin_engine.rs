@@ -16,9 +16,14 @@ pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
   let mut jackpot_hit = false;
   let mut jackpot_line_count = 0u8;
   let mut step_index = 0u8;
-  let mut step_multiplier = 10_000u32;
 
   while step_index < input.config.max_cascade_steps {
+    let step_multiplier = input
+      .config
+      .cascade_multiplier_table
+      .get(step_index as usize)
+      .copied()
+      .unwrap_or_else(|| input.config.cascade_multiplier_table.last().copied().unwrap_or(10_000));
     let winning_lines = evaluate_winning_lines(&current_grid, step_multiplier, input.bet, &input.config);
     if winning_lines.is_empty() {
       break;
@@ -59,7 +64,6 @@ pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
     });
 
     step_index = step_index.saturating_add(1);
-    step_multiplier = step_multiplier.saturating_add(10_000);
   }
 
   let total_multiplier_10000x = if input.bet == 0 {
@@ -240,6 +244,7 @@ mod tests {
       rows: 3,
       cols: 3,
       max_cascade_steps: 5,
+      cascade_multiplier_table: vec![10_000, 20_000, 30_000, 40_000, 50_000],
       symbol_weights: vec![
         AlgorithmSymbolWeight {
           symbol_code: 0,
