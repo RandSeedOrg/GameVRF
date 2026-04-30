@@ -5,6 +5,7 @@ type BusinessType = variant {
   QuickQuid;
   Mines;
   RoyalTreys;
+  FruitsGarden;
 };
 type RandSeedVO = record {
   idx : nat64;
