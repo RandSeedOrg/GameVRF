@@ -1,0 +1,80 @@
+name: Copilot Feature Analysis
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+      - labeled
+      - unlabeled
+      - reopened
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  request-copilot-analysis:
+    name: Request Copilot technical plan
+    runs-on: ubuntu-latest
+    if: >-
+      contains(github.event.issue.labels.*.name, 'Feature') &&
+      contains(github.event.issue.labels.*.name, 'Ready_for_Copilot')
+
+    steps:
+      - name: Add Copilot technical plan request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const marker = '<!-- copilot-feature-technical-plan-requested -->';
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              }
+            );
+
+            const alreadyRequested = comments.some(comment =>
+              comment.body && comment.body.includes(marker)
+            );
+
+            if (alreadyRequested) {
+              core.info(`Copilot technical plan already requested for issue #${issue.number}.`);
+              return;
+            }
+
+            const body = `${marker}
+
+@copilot Please analyze this feature issue and draft a technical implementation plan first.
+
+Context:
+- This issue was synced from Linear/GitHub integration.
+- Only proceed because both labels are present: \`Feature\` and \`Ready_for_Copilot\`.
+- Draft a technical plan only. Do not implement code or open a PR until a maintainer explicitly approves the plan.
+
+Please include:
+
+1. Feature summary
+2. Relevant existing architecture/code paths
+3. Files, modules, or components likely to change
+4. Proposed implementation approach
+5. Data model, API, or contract changes, if any
+6. Test plan
+7. Risks, tradeoffs, and open questions
+8. Suggested rollout or validation steps
+
+If requirements are ambiguous, list the questions that need maintainer clarification before implementation.`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body,
+            });
+
+            core.info(`Requested Copilot technical plan for issue #${issue.number}.`);
