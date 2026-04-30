@@ -30,7 +30,7 @@ jobs:
       - name: Assign issue to Copilot and add technical plan request
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.COPILOT_ASSIGNMENT_TOKEN || github.token }}
+          github-token: ${{ secrets.MY_TOKEN || github.token }}
           script: |
             const issue = context.payload.issue;
             const marker = '<!-- copilot-feature-technical-plan-requested -->';
