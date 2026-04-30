@@ -9,9 +9,14 @@ on:
       - unlabeled
       - reopened
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
+  actions: write
+  contents: write
   issues: write
-  contents: read
+  pull-requests: write
 
 jobs:
   request-copilot-analysis:
@@ -22,41 +27,26 @@ jobs:
       contains(github.event.issue.labels.*.name, 'Ready_for_Copilot')
 
     steps:
-      - name: Add Copilot technical plan request
-        uses: actions/github-script@v7
+      - name: Assign issue to Copilot and add technical plan request
+        uses: actions/github-script@v8
         with:
+          github-token: ${{ secrets.COPILOT_ASSIGNMENT_TOKEN || github.token }}
           script: |
             const issue = context.payload.issue;
             const marker = '<!-- copilot-feature-technical-plan-requested -->';
+            const copilotAssignee = 'copilot-swe-agent[bot]';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const targetRepo = `${owner}/${repo}`;
+            const baseBranch = context.payload.repository?.default_branch;
 
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                per_page: 100,
-              }
-            );
-
-            const alreadyRequested = comments.some(comment =>
-              comment.body && comment.body.includes(marker)
-            );
-
-            if (alreadyRequested) {
-              core.info(`Copilot technical plan already requested for issue #${issue.number}.`);
-              return;
-            }
-
-            const body = [
-              marker,
-              '',
+            const planRequest = [
               '@copilot Please analyze this feature issue and draft a technical implementation plan first.',
               '',
               'Context:',
               '- This issue was synced from Linear/GitHub integration.',
               '- Only proceed because both labels are present: `Feature` and `Ready_for_Copilot`.',
-              '- Draft a technical plan only. Do not implement code or open a PR until a maintainer explicitly approves the plan.',
+              '- Draft a technical plan first. Do not implement code until a maintainer explicitly approves the plan.',
               '',
               'Please include:',
               '',
@@ -72,11 +62,52 @@ jobs:
               'If requirements are ambiguous, list the questions that need maintainer clarification before implementation.',
             ].join('\n');
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner,
+                repo,
+                issue_number: issue.number,
+                per_page: 100,
+              }
+            );
+
+            const alreadyRequested = comments.some(comment =>
+              comment.body && comment.body.includes(marker)
+            );
+
+            const alreadyAssignedToCopilot = (issue.assignees || []).some(assignee =>
+              assignee.login === copilotAssignee || assignee.login === 'copilot-swe-agent'
+            );
+
+            if (!alreadyRequested) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `${marker}\n\n${planRequest}`,
+              });
+            } else {
+              core.info(`Copilot technical plan already requested for issue #${issue.number}.`);
+            }
+
+            if (alreadyAssignedToCopilot) {
+              core.info(`Issue #${issue.number} is already assigned to Copilot.`);
+              return;
+            }
+
+            await github.request('POST /repos/{owner}/{repo}/issues/{issue_number}/assignees', {
+              owner,
+              repo,
               issue_number: issue.number,
-              body,
+              assignees: [copilotAssignee],
+              agent_assignment: {
+                target_repo: targetRepo,
+                base_branch: baseBranch,
+                custom_instructions: planRequest,
+                custom_agent: '',
+                model: '',
+              },
             });
 
-            core.info(`Requested Copilot technical plan for issue #${issue.number}.`);
+            core.info(`Assigned issue #${issue.number} to Copilot for a technical plan.`);
