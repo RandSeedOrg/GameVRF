@@ -48,27 +48,29 @@ jobs:
               return;
             }
 
-            const body = `${marker}
-
-@copilot Please analyze this feature issue and draft a technical implementation plan first.
-
-Context:
-- This issue was synced from Linear/GitHub integration.
-- Only proceed because both labels are present: \`Feature\` and \`Ready_for_Copilot\`.
-- Draft a technical plan only. Do not implement code or open a PR until a maintainer explicitly approves the plan.
-
-Please include:
-
-1. Feature summary
-2. Relevant existing architecture/code paths
-3. Files, modules, or components likely to change
-4. Proposed implementation approach
-5. Data model, API, or contract changes, if any
-6. Test plan
-7. Risks, tradeoffs, and open questions
-8. Suggested rollout or validation steps
-
-If requirements are ambiguous, list the questions that need maintainer clarification before implementation.`;
+            const body = [
+              marker,
+              '',
+              '@copilot Please analyze this feature issue and draft a technical implementation plan first.',
+              '',
+              'Context:',
+              '- This issue was synced from Linear/GitHub integration.',
+              '- Only proceed because both labels are present: `Feature` and `Ready_for_Copilot`.',
+              '- Draft a technical plan only. Do not implement code or open a PR until a maintainer explicitly approves the plan.',
+              '',
+              'Please include:',
+              '',
+              '1. Feature summary',
+              '2. Relevant existing architecture/code paths',
+              '3. Files, modules, or components likely to change',
+              '4. Proposed implementation approach',
+              '5. Data model, API, or contract changes, if any',
+              '6. Test plan',
+              '7. Risks, tradeoffs, and open questions',
+              '8. Suggested rollout or validation steps',
+              '',
+              'If requirements are ambiguous, list the questions that need maintainer clarification before implementation.',
+            ].join('\n');
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
