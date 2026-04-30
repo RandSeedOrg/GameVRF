@@ -1,4 +1,4 @@
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use super::types::{
@@ -6,9 +6,25 @@ use super::types::{
 };
 
 pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
+  let layout_is_supported = input.config.rows == 3 && input.config.cols == 3;
+  let held_mask_is_valid = (input.held_cols_mask & !0b0000_0111) == 0;
+
   let mut rng = ChaCha20Rng::from_seed(input.seed_ctx.round_seed);
   let mut current_grid = build_initial_grid(&input, &mut rng);
   let initial_grid = current_grid;
+
+  if !layout_is_supported || !held_mask_is_valid {
+    return SpinEngineOutput {
+      initial_grid,
+      final_grid: current_grid,
+      cascades: Vec::new(),
+      total_win: 0,
+      total_multiplier_10000x: 0,
+      free_spins_awarded: 0,
+      jackpot_hit: false,
+      jackpot_line_count: 0,
+    };
+  }
 
   let mut cascades = Vec::new();
   let mut total_win = 0u64;
@@ -29,7 +45,7 @@ pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
       break;
     }
 
-    let step_win = winning_lines.iter().map(|line| line.line_win).sum::<u64>();
+    let step_win = winning_lines.iter().fold(0u64, |sum, line| sum.saturating_add(line.line_win));
     total_win = total_win.saturating_add(step_win);
 
     let awarded_free_spins = resolve_awarded_free_spins(&winning_lines, &input.config);
@@ -38,7 +54,9 @@ pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
     let contains_jackpot_line = winning_lines.iter().any(|line| line.is_jackpot_line);
     if contains_jackpot_line {
       jackpot_hit = true;
-      jackpot_line_count = jackpot_line_count.saturating_add(winning_lines.iter().filter(|line| line.is_jackpot_line).count() as u8);
+      let jackpot_hits = winning_lines.iter().filter(|line| line.is_jackpot_line).count();
+      let jackpot_hits = jackpot_hits.min(u8::MAX as usize) as u8;
+      jackpot_line_count = jackpot_line_count.saturating_add(jackpot_hits);
       cascades.push(CascadeResolution {
         step_index,
         multiplier_10000x: step_multiplier,
@@ -69,7 +87,7 @@ pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
   let total_multiplier_10000x = if input.bet == 0 {
     0
   } else {
-    ((total_win as u128) * 10_000u128 / input.bet as u128) as u32
+    saturating_u128_to_u32((total_win as u128) * 10_000u128 / input.bet as u128)
   };
 
   SpinEngineOutput {
@@ -110,7 +128,7 @@ fn sample_symbol(config: &SpinAlgorithmConfig, rng: &mut ChaCha20Rng) -> SymbolC
     return config.symbol_weights[0].symbol_code;
   }
 
-  let target = (rng.next_u32() as u64) % total_weight;
+  let target = rng.random_range(0..total_weight);
   let mut acc = 0u64;
   for item in &config.symbol_weights {
     acc = acc.saturating_add(item.weight_ppm as u64);
@@ -131,10 +149,11 @@ fn evaluate_winning_lines(
   let mut results = Vec::new();
 
   for (payline_index, cells) in config.paylines.iter().enumerate() {
-    let line_symbols = [grid[cells[0] as usize], grid[cells[1] as usize], grid[cells[2] as usize]];
-    let Some(target_symbol) = resolve_target_symbol(&line_symbols, config.wild_symbol) else {
+    let Some(line_symbols) = safe_line_symbols(grid, cells) else {
       continue;
     };
+
+    let target_symbol = resolve_target_symbol(&line_symbols, config.wild_symbol);
 
     if !line_matches(&line_symbols, target_symbol, config.wild_symbol) {
       continue;
@@ -148,12 +167,12 @@ fn evaluate_winning_lines(
     let line_multiplier_10000x = if is_jackpot_line {
       payout_rule.payout_multiplier_10000x
     } else {
-      ((payout_rule.payout_multiplier_10000x as u128 * cascade_multiplier_10000x as u128) / 10_000u128) as u32
+      saturating_u128_to_u32((payout_rule.payout_multiplier_10000x as u128 * cascade_multiplier_10000x as u128) / 10_000u128)
     };
 
-    let line_win = ((bet as u128) * line_multiplier_10000x as u128 / 10_000u128) as u64;
+    let line_win = saturating_u128_to_u64((bet as u128) * line_multiplier_10000x as u128 / 10_000u128);
     results.push(WinningLineResolution {
-      payline_id: payline_index as u8,
+      payline_id: payline_index.min(u8::MAX as usize) as u8,
       symbol_code: target_symbol,
       cells: *cells,
       line_multiplier_10000x,
@@ -165,8 +184,20 @@ fn evaluate_winning_lines(
   results
 }
 
-fn resolve_target_symbol(line_symbols: &[SymbolCode; 3], wild_symbol: SymbolCode) -> Option<SymbolCode> {
-  line_symbols.iter().copied().find(|symbol| *symbol != wild_symbol).or(Some(wild_symbol))
+fn safe_line_symbols(grid: &[SymbolCode; 9], cells: &[u8; 3]) -> Option<[SymbolCode; 3]> {
+  let [c0, c1, c2] = *cells;
+  let i0 = c0 as usize;
+  let i1 = c1 as usize;
+  let i2 = c2 as usize;
+  if i0 >= grid.len() || i1 >= grid.len() || i2 >= grid.len() {
+    return None;
+  }
+
+  Some([grid[i0], grid[i1], grid[i2]])
+}
+
+fn resolve_target_symbol(line_symbols: &[SymbolCode; 3], wild_symbol: SymbolCode) -> SymbolCode {
+  line_symbols.iter().copied().find(|symbol| *symbol != wild_symbol).unwrap_or(wild_symbol)
 }
 
 fn line_matches(line_symbols: &[SymbolCode; 3], target_symbol: SymbolCode, wild_symbol: SymbolCode) -> bool {
@@ -202,7 +233,10 @@ fn apply_cascade(
   let mut removable = [false; 9];
   for line in winning_lines.iter().filter(|line| !line.is_jackpot_line) {
     for cell in line.cells {
-      removable[cell as usize] = true;
+      let index = cell as usize;
+      if index < removable.len() {
+        removable[index] = true;
+      }
     }
   }
 
@@ -229,6 +263,14 @@ fn apply_cascade(
   }
 
   next_grid
+}
+
+fn saturating_u128_to_u32(value: u128) -> u32 {
+  value.min(u32::MAX as u128) as u32
+}
+
+fn saturating_u128_to_u64(value: u128) -> u64 {
+  value.min(u64::MAX as u128) as u64
 }
 
 #[cfg(test)]
@@ -327,5 +369,115 @@ mod tests {
     assert_eq!(result.initial_grid[1], 2);
     assert_eq!(result.initial_grid[4], 5);
     assert_eq!(result.initial_grid[7], 8);
+  }
+
+  #[test]
+  fn invalid_layout_returns_empty_result() {
+    let mut cfg = config();
+    cfg.rows = 4;
+
+    let input = SpinEngineInput {
+      bet: 100,
+      held_cols_mask: 0,
+      previous_grid: None,
+      config: cfg,
+      seed_ctx: RoundSeedContext {
+        root_seed: [5u8; 32],
+        round_seed: [6u8; 32],
+        vrf_seed_idx: Some(3),
+      },
+    };
+
+    let result = execute_spin(input);
+    assert!(result.cascades.is_empty());
+    assert_eq!(result.total_win, 0);
+    assert_eq!(result.total_multiplier_10000x, 0);
+    assert_eq!(result.final_grid, result.initial_grid);
+  }
+
+  #[test]
+  fn invalid_payline_indices_are_ignored() {
+    let mut cfg = config();
+    cfg.max_cascade_steps = 1;
+    cfg.paylines = vec![[0, 1, 99], [0, 1, 2]];
+    cfg.symbol_weights = vec![AlgorithmSymbolWeight {
+      symbol_code: 1,
+      weight_ppm: 1,
+    }];
+    cfg.payout_rules = vec![AlgorithmPayoutRule {
+      symbol_code: 1,
+      match_count: 3,
+      payout_multiplier_10000x: 10_000,
+      is_jackpot_symbol: false,
+    }];
+    cfg.jackpot_symbols = Vec::new();
+    cfg.wild_symbol = 10;
+
+    let input = SpinEngineInput {
+      bet: 100,
+      held_cols_mask: 0b111,
+      previous_grid: Some([1; 9]),
+      config: cfg,
+      seed_ctx: RoundSeedContext {
+        root_seed: [7u8; 32],
+        round_seed: [8u8; 32],
+        vrf_seed_idx: Some(4),
+      },
+    };
+
+    let result = execute_spin(input);
+    assert_eq!(result.cascades.len(), 1);
+    assert_eq!(result.cascades[0].winning_lines.len(), 1);
+    assert_eq!(result.cascades[0].winning_lines[0].payline_id, 1);
+  }
+
+  #[test]
+  fn arithmetic_uses_saturating_conversions() {
+    let mut cfg = config();
+    cfg.max_cascade_steps = 1;
+    cfg.cascade_multiplier_table = vec![10_000];
+    cfg.symbol_weights = vec![AlgorithmSymbolWeight {
+      symbol_code: 1,
+      weight_ppm: 1,
+    }];
+    cfg.payout_rules = vec![AlgorithmPayoutRule {
+      symbol_code: 1,
+      match_count: 3,
+      payout_multiplier_10000x: u32::MAX,
+      is_jackpot_symbol: false,
+    }];
+    cfg.jackpot_symbols = Vec::new();
+    cfg.wild_symbol = 10;
+
+    let huge_bet_input = SpinEngineInput {
+      bet: u64::MAX,
+      held_cols_mask: 0b111,
+      previous_grid: Some([1; 9]),
+      config: cfg.clone(),
+      seed_ctx: RoundSeedContext {
+        root_seed: [9u8; 32],
+        round_seed: [10u8; 32],
+        vrf_seed_idx: Some(5),
+      },
+    };
+
+    let huge_bet_result = execute_spin(huge_bet_input);
+    assert_eq!(huge_bet_result.cascades[0].step_win, u64::MAX);
+    assert_eq!(huge_bet_result.total_win, u64::MAX);
+
+    let small_bet_input = SpinEngineInput {
+      bet: 1,
+      held_cols_mask: 0b111,
+      previous_grid: Some([1; 9]),
+      config: cfg,
+      seed_ctx: RoundSeedContext {
+        root_seed: [11u8; 32],
+        round_seed: [12u8; 32],
+        vrf_seed_idx: Some(6),
+      },
+    };
+
+    let small_bet_result = execute_spin(small_bet_input);
+    assert_eq!(small_bet_result.total_multiplier_10000x, u32::MAX);
   }
 }
