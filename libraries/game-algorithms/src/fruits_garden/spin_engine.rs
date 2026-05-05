@@ -7,8 +7,6 @@ use super::types::{
   AlgorithmPayoutRule, CascadeResolution, SpinAlgorithmConfig, SpinEngineInput, SpinEngineOutput, SymbolCode, WinningLineResolution,
 };
 
-const FIVE_SYMBOL_CODE: SymbolCode = 9;
-
 #[derive(Clone, Debug, Default)]
 struct HeldSpinContext {
   held_symbols: HashSet<SymbolCode>,
@@ -172,7 +170,7 @@ fn sample_symbol_for_initial_grid(config: &SpinAlgorithmConfig, held_context: &H
 
   for item in &config.symbol_weights {
     let mut weight = item.weight_ppm as f64;
-    let is_special_symbol = item.symbol_code == FIVE_SYMBOL_CODE || item.symbol_code == config.wild_symbol;
+    let is_special_symbol = config.jackpot_symbols.contains(&item.symbol_code) || item.symbol_code == config.wild_symbol;
     if held_context.held_symbols.contains(&item.symbol_code) || is_special_symbol {
       let payout_multiplier = find_payout_rule(config, item.symbol_code)
         .map(|rule| rule.payout_multiplier_10000x as f64 / 10_000.0)
