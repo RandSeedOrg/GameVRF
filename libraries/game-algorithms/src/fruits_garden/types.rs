@@ -28,6 +28,7 @@ pub struct SpinAlgorithmConfig {
   pub cols: u8,
   pub max_cascade_steps: u8,
   pub cascade_multiplier_table: Vec<u32>,
+  pub hold_damping_scalar_10000x: u32,
   pub symbol_weights: Vec<AlgorithmSymbolWeight>,
   pub paylines: Vec<[u8; 3]>,
   pub payout_rules: Vec<AlgorithmPayoutRule>,
