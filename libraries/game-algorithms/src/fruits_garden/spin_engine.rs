@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -5,12 +7,21 @@ use super::types::{
   AlgorithmPayoutRule, CascadeResolution, SpinAlgorithmConfig, SpinEngineInput, SpinEngineOutput, SymbolCode, WinningLineResolution,
 };
 
+const FIVE_SYMBOL_CODE: SymbolCode = 9;
+
+#[derive(Clone, Debug, Default)]
+struct HeldSpinContext {
+  held_symbols: HashSet<SymbolCode>,
+  held_count: u8,
+}
+
 pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
   let layout_is_supported = input.config.rows == 3 && input.config.cols == 3;
   let held_mask_is_valid = (input.held_cols_mask & !0b0000_0111) == 0;
+  let held_context = collect_held_spin_context(input.held_cols_mask, input.previous_grid);
 
   let mut rng = ChaCha20Rng::from_seed(input.seed_ctx.round_seed);
-  let mut current_grid = build_initial_grid(&input, &mut rng);
+  let mut current_grid = build_initial_grid(&input, &held_context, &mut rng);
   let initial_grid = current_grid;
 
   if !layout_is_supported || !held_mask_is_valid {
@@ -102,7 +113,7 @@ pub fn execute_spin(input: SpinEngineInput) -> SpinEngineOutput {
   }
 }
 
-fn build_initial_grid(input: &SpinEngineInput, rng: &mut ChaCha20Rng) -> [SymbolCode; 9] {
+fn build_initial_grid(input: &SpinEngineInput, held_context: &HeldSpinContext, rng: &mut ChaCha20Rng) -> [SymbolCode; 9] {
   let mut grid = [0u8; 9];
   for index in 0..9 {
     let col = (index % 3) as u8;
@@ -113,9 +124,84 @@ fn build_initial_grid(input: &SpinEngineInput, rng: &mut ChaCha20Rng) -> [Symbol
         continue;
       }
     }
-    grid[index] = sample_symbol(&input.config, rng);
+    grid[index] = sample_symbol_for_initial_grid(&input.config, held_context, rng);
   }
   grid
+}
+
+fn collect_held_spin_context(held_cols_mask: u8, previous_grid: Option<[SymbolCode; 9]>) -> HeldSpinContext {
+  let held_count = held_cols_mask.count_ones() as u8;
+  if held_count == 0 {
+    return HeldSpinContext::default();
+  }
+
+  let Some(previous_grid) = previous_grid else {
+    return HeldSpinContext::default();
+  };
+
+  let mut held_symbols = HashSet::new();
+  for col in 0..3u8 {
+    if (held_cols_mask & (1 << col)) == 0 {
+      continue;
+    }
+
+    for row in 0..3usize {
+      let index = row * 3 + col as usize;
+      held_symbols.insert(previous_grid[index]);
+    }
+  }
+
+  HeldSpinContext {
+    held_symbols,
+    held_count,
+  }
+}
+
+fn sample_symbol_for_initial_grid(config: &SpinAlgorithmConfig, held_context: &HeldSpinContext, rng: &mut ChaCha20Rng) -> SymbolCode {
+  if held_context.held_count == 0 || config.hold_damping_scalar_10000x == 0 {
+    return sample_symbol(config, rng);
+  }
+
+  if config.symbol_weights.is_empty() {
+    return 0;
+  }
+
+  let damping_power = held_context.held_count as f64 * config.hold_damping_scalar_10000x as f64 / 10_000.0;
+  let mut total_weight = 0.0f64;
+  let mut dynamic_weights = Vec::with_capacity(config.symbol_weights.len());
+
+  for item in &config.symbol_weights {
+    let mut weight = item.weight_ppm as f64;
+    let is_special_symbol = item.symbol_code == FIVE_SYMBOL_CODE || item.symbol_code == config.wild_symbol;
+    if held_context.held_symbols.contains(&item.symbol_code) || is_special_symbol {
+      let payout_multiplier = find_payout_rule(config, item.symbol_code)
+        .map(|rule| rule.payout_multiplier_10000x as f64 / 10_000.0)
+        .unwrap_or(0.0)
+        .max(2.0);
+      let dampening_factor = payout_multiplier.powf(damping_power);
+      if dampening_factor.is_finite() && dampening_factor > 0.0 {
+        weight /= dampening_factor;
+      }
+    }
+
+    total_weight += weight;
+    dynamic_weights.push((item.symbol_code, weight));
+  }
+
+  if total_weight <= 0.0 || !total_weight.is_finite() {
+    return config.symbol_weights[0].symbol_code;
+  }
+
+  let target = rng.random_range(0.0..total_weight);
+  let mut acc = 0.0;
+  for (symbol_code, weight) in dynamic_weights {
+    acc += weight;
+    if target <= acc {
+      return symbol_code;
+    }
+  }
+
+  config.symbol_weights.last().map(|item| item.symbol_code).unwrap_or(0)
 }
 
 fn sample_symbol(config: &SpinAlgorithmConfig, rng: &mut ChaCha20Rng) -> SymbolCode {
@@ -287,6 +373,7 @@ mod tests {
       cols: 3,
       max_cascade_steps: 5,
       cascade_multiplier_table: vec![10_000, 20_000, 30_000, 40_000, 50_000],
+      hold_damping_scalar_10000x: 0,
       symbol_weights: vec![
         AlgorithmSymbolWeight {
           symbol_code: 0,
@@ -479,5 +566,130 @@ mod tests {
 
     let small_bet_result = execute_spin(small_bet_input);
     assert_eq!(small_bet_result.total_multiplier_10000x, u32::MAX);
+  }
+
+  #[test]
+  fn hold_damping_is_noop_without_holds() {
+    let mut no_damping = config();
+    no_damping.hold_damping_scalar_10000x = 0;
+
+    let mut with_damping = config();
+    with_damping.hold_damping_scalar_10000x = 8_000;
+
+    let base_input = SpinEngineInput {
+      bet: 100,
+      held_cols_mask: 0,
+      previous_grid: None,
+      config: no_damping,
+      seed_ctx: RoundSeedContext {
+        root_seed: [13u8; 32],
+        round_seed: [14u8; 32],
+        vrf_seed_idx: Some(7),
+      },
+    };
+
+    let damped_input = SpinEngineInput {
+      config: with_damping,
+      ..base_input.clone()
+    };
+
+    let base_result = execute_spin(base_input);
+    let damped_result = execute_spin(damped_input);
+    assert_eq!(base_result, damped_result);
+  }
+
+  #[test]
+  fn hold_damping_reduces_held_symbol_frequency_on_initial_non_held_cells() {
+    let mut baseline_cfg = config();
+    baseline_cfg.hold_damping_scalar_10000x = 0;
+    baseline_cfg.symbol_weights = vec![
+      AlgorithmSymbolWeight {
+        symbol_code: 9,
+        weight_ppm: 3_000,
+      },
+      AlgorithmSymbolWeight {
+        symbol_code: 1,
+        weight_ppm: 3_000,
+      },
+      AlgorithmSymbolWeight {
+        symbol_code: 10,
+        weight_ppm: 1_000,
+      },
+    ];
+
+    baseline_cfg.payout_rules = vec![
+      AlgorithmPayoutRule {
+        symbol_code: 1,
+        match_count: 3,
+        payout_multiplier_10000x: 10_000,
+        is_jackpot_symbol: false,
+      },
+      AlgorithmPayoutRule {
+        symbol_code: 9,
+        match_count: 3,
+        payout_multiplier_10000x: 80_000,
+        is_jackpot_symbol: true,
+      },
+      AlgorithmPayoutRule {
+        symbol_code: 10,
+        match_count: 3,
+        payout_multiplier_10000x: 100_000,
+        is_jackpot_symbol: true,
+      },
+    ];
+    baseline_cfg.jackpot_symbols = vec![9, 10];
+
+    let mut damped_cfg = baseline_cfg.clone();
+    damped_cfg.hold_damping_scalar_10000x = 8_000;
+
+    let previous_grid = [9, 1, 1, 9, 1, 1, 9, 1, 1];
+    let mut baseline_hits = 0u32;
+    let mut damped_hits = 0u32;
+
+    for seed_index in 0u16..240u16 {
+      let mut round_seed = [0u8; 32];
+      round_seed[0] = (seed_index & 0x00ff) as u8;
+      round_seed[1] = (seed_index >> 8) as u8;
+
+      let baseline_result = execute_spin(SpinEngineInput {
+        bet: 100,
+        held_cols_mask: 0b001,
+        previous_grid: Some(previous_grid),
+        config: baseline_cfg.clone(),
+        seed_ctx: RoundSeedContext {
+          root_seed: [15u8; 32],
+          round_seed,
+          vrf_seed_idx: Some(seed_index as u64),
+        },
+      });
+
+      let damped_result = execute_spin(SpinEngineInput {
+        bet: 100,
+        held_cols_mask: 0b001,
+        previous_grid: Some(previous_grid),
+        config: damped_cfg.clone(),
+        seed_ctx: RoundSeedContext {
+          root_seed: [15u8; 32],
+          round_seed,
+          vrf_seed_idx: Some(seed_index as u64),
+        },
+      });
+
+      for &index in &[1usize, 2usize, 4usize, 5usize, 7usize, 8usize] {
+        if baseline_result.initial_grid[index] == 9 {
+          baseline_hits = baseline_hits.saturating_add(1);
+        }
+        if damped_result.initial_grid[index] == 9 {
+          damped_hits = damped_hits.saturating_add(1);
+        }
+      }
+    }
+
+    assert!(
+      damped_hits < baseline_hits,
+      "expected damped hits ({}) to be lower than baseline hits ({})",
+      damped_hits,
+      baseline_hits
+    );
   }
 }
