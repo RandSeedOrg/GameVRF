@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 pub fn compute_mine_positions(seed: [u8; 32], total_cells: u16, mines_count: u16) -> HashSet<u16> {

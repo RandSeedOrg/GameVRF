@@ -1,9 +1,13 @@
-use ic_cdk::management_canister::raw_rand;
+use candid::Principal;
+use ic_cdk::call::Call;
 
 async fn get_on_chain_seed_result() -> Result<crate::RawSeed, String> {
-  let on_chain_seed = raw_rand()
+  let on_chain_seed = Call::unbounded_wait(Principal::management_canister(), "raw_rand")
     .await
-    .map_err(|err| format!("failed to get seed: {err}"))?;
+    .map_err(|err| format!("failed to get seed: {err}"))?
+    .candid_tuple::<(Vec<u8>,)>()
+    .map_err(|err| format!("failed to decode raw_rand response: {err}"))?
+    .0;
 
   on_chain_seed.as_slice().try_into().map_err(|_| {
     format!(

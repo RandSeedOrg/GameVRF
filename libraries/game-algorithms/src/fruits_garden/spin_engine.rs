@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use super::types::{

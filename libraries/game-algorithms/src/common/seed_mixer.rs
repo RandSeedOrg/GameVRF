@@ -1,4 +1,4 @@
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Mixes a 32-byte root seed with a byte slice to generate a new 32-byte seed.

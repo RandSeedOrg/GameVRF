@@ -1,5 +1,5 @@
-use rand::SeedableRng;
-use rand::{distr::uniform::SampleUniform, Rng};
+use rand::{RngExt, SeedableRng};
+use rand::{distr::uniform::SampleUniform};
 use rand_chacha::ChaCha20Rng;
 
 /// 中文：为整数类型提供基于 ChaCha20 的确定性随机数生成接口。
