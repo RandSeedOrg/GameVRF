@@ -3,6 +3,7 @@ type BusinessType = variant {
   Keno;
   Daily4;
   QuickQuid;
+  Roulette;
   Mines;
   RoyalTreys;
   FruitsGarden;
