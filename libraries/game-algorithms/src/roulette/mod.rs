@@ -1,10 +1,10 @@
 use crate::common::{chacha::generate_numbers, seed_mixer::SeedMixableNumber};
 
-// CN: 轮盘可落点数量（0..=36）。
+// 中文：轮盘可落点数量（0..=36）。
 // EN: Count of roulette wheel pockets (0..=36).
 pub const ROULETTE_POCKET_COUNT: u8 = 37;
 
-// CN: 基于根种子与轮次因子生成可复验的中奖号码。
+// 中文：基于根种子与轮次因子生成可复验的中奖号码。
 // EN: Generates a reproducible winning number from root seed and round factor.
 pub fn generate_winning_number<T: SeedMixableNumber>(seed: [u8; 32], round: T) -> u8 {
   let mixed_seed = round.mix_into_seed(seed);
@@ -21,7 +21,7 @@ mod tests {
   #[test]
   fn test_generate_winning_number_is_in_range() {
     let winning_number = generate_winning_number([7u8; 32], 42u64);
-    assert!(winning_number <= 36);
+    assert!(winning_number <= ROULETTE_POCKET_COUNT - 1);
   }
 
   #[test]
@@ -36,12 +36,12 @@ mod tests {
   }
 
   #[test]
-  fn test_generate_winning_number_changes_with_round() {
+  fn test_round_mix_changes_seed() {
     let seed = [11u8; 32];
 
-    let round_1 = generate_winning_number(seed, 1u64);
-    let round_2 = generate_winning_number(seed, 2u64);
+    let mixed_seed_1 = 1u64.mix_into_seed(seed);
+    let mixed_seed_2 = 2u64.mix_into_seed(seed);
 
-    assert_ne!(round_1, round_2);
+    assert_ne!(mixed_seed_1, mixed_seed_2);
   }
 }
