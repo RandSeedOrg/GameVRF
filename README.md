@@ -4,6 +4,8 @@ RandSeed.org is building an open, verifiable randomness layer for on-chain and o
 
 This repository is both an engineering resource and a transparency resource. If someone wants to check game integrity, they can review the Rust implementation, run the deterministic tests, reproduce a game result from the public inputs, and even deploy or call the verification logic locally for their own experiments.
 
+Foundamental Randomness Generation Function: https://docs.internetcomputer.org/concepts/chain-key-cryptography/
+
 ## What this repository provides
 
 - **Open game algorithms** for supported RandSeed games.
