@@ -3,3 +3,5 @@ use ic_stable_structures::memory_manager::MemoryId;
 pub const RAND_SEED_MEMORY_ID: MemoryId = MemoryId::new(0);
 pub const RAND_SEED_MEMORY_SEQ_MEMORY_ID: MemoryId = MemoryId::new(1);
 pub const SEED_POOL_CONFIG_MEMORY_ID: MemoryId = MemoryId::new(2);
+pub const AUTHORIZED_CALLERS_MEMORY_ID: MemoryId = MemoryId::new(3);
+pub const AUTH_MIGRATION_STATE_MEMORY_ID: MemoryId = MemoryId::new(4);
