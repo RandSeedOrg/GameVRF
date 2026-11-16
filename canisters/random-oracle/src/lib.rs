@@ -1,4 +1,7 @@
-use std::cell::RefCell;
+use std::{
+  cell::RefCell,
+  collections::{BTreeSet, HashMap, HashSet},
+};
 
 /// 仅在 sensitive_debug_api feature 开启时打印日志，用法同 ic_cdk::println!
 #[macro_export]
@@ -9,7 +12,7 @@ macro_rules! debug_println {
   };
 }
 
-use candid::Principal;
+use candid::{CandidType, Principal};
 use ic_cdk::{
   api::{accept_message, is_controller, msg_caller, msg_method_name, time},
   init, inspect_message, post_upgrade, query, update,
@@ -18,7 +21,10 @@ use ic_stable_structures::{
   memory_manager::{MemoryManager, VirtualMemory},
   BTreeMap as StableBTreeMap, Cell, DefaultMemoryImpl,
 };
+use serde::Deserialize;
 
+#[cfg(feature = "sensitive_debug_api")]
+use crate::transport_structures::SeedPoolStatus;
 use crate::{
   ic_rand_utils::get_on_chain_seed,
   memory_ids::{
@@ -28,8 +34,6 @@ use crate::{
   stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
   transport_structures::RandSeedVO,
 };
-#[cfg(feature = "sensitive_debug_api")]
-use crate::transport_structures::SeedPoolStatus;
 
 mod ic_rand_utils;
 mod memory_ids;
@@ -46,6 +50,19 @@ pub type SeedIdGenerator = RefCell<Cell<RandSeedId, Memory>>;
 const AUTH_MIGRATION_DONE: u8 = 1;
 const MIGRATION_HEAD_SCAN_LIMIT: usize = 500;
 const MIGRATION_TAIL_SCAN_LIMIT: usize = 2_000;
+const MAX_AUTHORIZED_CALLERS: usize = 100;
+const AUTHORIZED_CALLER_MANAGEMENT_PERMISSION: &str = "random_oracle::authorized_caller::manage";
+
+#[derive(CandidType, Deserialize)]
+pub struct UserRolePermissionVo {
+  pub principal_id: String,
+  pub permission_codes: Vec<String>,
+}
+
+#[derive(CandidType, Deserialize)]
+pub struct SystemConfig {
+  pub user_role_permissions: Vec<UserRolePermissionVo>,
+}
 
 thread_local! {
   static MEMORY_MANAGER: RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default()));
@@ -70,6 +87,8 @@ thread_local! {
       MEMORY_MANAGER.with(|m| m.borrow().get(AUTHORIZED_CALLERS_MEMORY_ID)),
     )
   );
+
+  static USER_ROLE_PERMISSIONS: RefCell<HashMap<String, HashSet<String>>> = RefCell::new(HashMap::new());
 
   pub static AUTH_MIGRATION_STATE: RefCell<Cell<u8, Memory>> = RefCell::new(
     Cell::init(
@@ -110,6 +129,30 @@ fn is_whitelisted(caller: &Principal) -> bool {
   AUTHORIZED_CALLERS.with(|callers| callers.borrow().contains_key(caller))
 }
 
+fn has_permission(caller: &Principal, permission_code: &str) -> bool {
+  USER_ROLE_PERMISSIONS.with(|permissions| {
+    permissions
+      .borrow()
+      .get(&caller.to_text())
+      .is_some_and(|codes| codes.contains(permission_code))
+  })
+}
+
+fn check_authorized_caller_management_authorization(caller: Principal, permission_granted: bool) -> Result<(), String> {
+  if caller == Principal::anonymous() {
+    return Err("Anonymous caller is not allowed".to_string());
+  }
+  if !permission_granted {
+    return Err("Caller does not have permission to manage random oracle authorized callers".to_string());
+  }
+  Ok(())
+}
+
+fn require_authorized_caller_management() -> Result<(), String> {
+  let caller = msg_caller();
+  check_authorized_caller_management_authorization(caller, has_permission(&caller, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION))
+}
+
 fn require_authorized_caller() -> Result<(), String> {
   let caller = msg_caller();
   check_caller_authorization(caller, is_controller(&caller), is_whitelisted(&caller))
@@ -127,6 +170,23 @@ fn validate_whitelist_target(principal: &Principal) -> Result<(), String> {
   Ok(())
 }
 
+fn check_authorized_caller_capacity(current_count: u64, added_count: usize) -> Result<(), String> {
+  if added_count > MAX_AUTHORIZED_CALLERS || current_count > MAX_AUTHORIZED_CALLERS as u64 - added_count as u64 {
+    return Err(format!("Authorized caller limit of {} reached", MAX_AUTHORIZED_CALLERS));
+  }
+  Ok(())
+}
+
+fn replace_user_role_permissions(user_role_permissions: Vec<UserRolePermissionVo>) {
+  let permissions = user_role_permissions
+    .into_iter()
+    .map(|entry| (entry.principal_id, entry.permission_codes.into_iter().collect()))
+    .collect();
+  USER_ROLE_PERMISSIONS.with(|current| {
+    *current.borrow_mut() = permissions;
+  });
+}
+
 /// 首次升级到带白名单版本时，按有界窗口扫描历史种子记录中的 `created_by` Principal，
 /// 自动将线上已有彩票业务 Canister 纳入授权白名单，避免大表全量遍历触发指令上限 Trap。
 fn migrate_historical_callers_once() {
@@ -138,14 +198,14 @@ fn migrate_historical_callers_once() {
   let mut discovered = Vec::new();
   RAND_SEED_MAP.with(|seeds| {
     let map = seeds.borrow();
-    for entry in map.iter().take(MIGRATION_HEAD_SCAN_LIMIT) {
+    for entry in map.iter().rev().take(MIGRATION_TAIL_SCAN_LIMIT) {
       if let Some(principal) = entry.value().created_by {
         if principal != Principal::anonymous() && !discovered.contains(&principal) {
           discovered.push(principal);
         }
       }
     }
-    for entry in map.iter().rev().take(MIGRATION_TAIL_SCAN_LIMIT) {
+    for entry in map.iter().take(MIGRATION_HEAD_SCAN_LIMIT) {
       if let Some(principal) = entry.value().created_by {
         if principal != Principal::anonymous() && !discovered.contains(&principal) {
           discovered.push(principal);
@@ -157,6 +217,9 @@ fn migrate_historical_callers_once() {
   AUTHORIZED_CALLERS.with(|callers| {
     let mut map = callers.borrow_mut();
     for principal in discovered {
+      if map.len() >= MAX_AUTHORIZED_CALLERS as u64 {
+        break;
+      }
       map.insert(principal, ());
     }
   });
@@ -247,48 +310,77 @@ async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
 }
 
 #[update]
+async fn setup_subscribe(admin: Principal) -> String {
+  if let Err(error) = require_controller() {
+    return format!("Setup subscribe failed: {error}");
+  }
+
+  match ic_cdk::call::Call::unbounded_wait(admin, "subscribe").await {
+    Ok(response) => match response.candid::<String>() {
+      Ok(message) => message,
+      Err(error) => format!("Failed to decode subscription response: {:?}", error),
+    },
+    Err(error) => format!("Failed to subscribe {:?}", error),
+  }
+}
+
+#[update]
+fn update_system_configs(config: SystemConfig) {
+  if let Err(error) = require_controller() {
+    ic_cdk::trap(&format!("Update system configs failed: {error}"));
+  }
+
+  replace_user_role_permissions(config.user_role_permissions);
+}
+
+#[update]
 fn add_authorized_caller(caller: Principal) -> Result<(), String> {
-  require_controller()?;
+  require_authorized_caller_management()?;
   validate_whitelist_target(&caller)?;
   AUTHORIZED_CALLERS.with(|callers| {
-    callers.borrow_mut().insert(caller, ());
-  });
-  Ok(())
+    let mut callers = callers.borrow_mut();
+    if !callers.contains_key(&caller) {
+      check_authorized_caller_capacity(callers.len(), 1)?;
+      callers.insert(caller, ());
+    }
+    Ok(())
+  })
 }
 
 #[update]
 fn add_authorized_callers(principals: Vec<Principal>) -> Result<(), String> {
-  require_controller()?;
+  require_authorized_caller_management()?;
+  if principals.len() > MAX_AUTHORIZED_CALLERS {
+    return Err(format!("A batch can contain at most {} authorized callers", MAX_AUTHORIZED_CALLERS));
+  }
   for principal in &principals {
     validate_whitelist_target(principal)?;
   }
+
+  let unique_principals: BTreeSet<Principal> = principals.into_iter().collect();
   AUTHORIZED_CALLERS.with(|callers| {
     let mut map = callers.borrow_mut();
-    for principal in principals {
+    let added_count = unique_principals.iter().filter(|principal| !map.contains_key(principal)).count();
+    check_authorized_caller_capacity(map.len(), added_count)?;
+    for principal in unique_principals {
       map.insert(principal, ());
     }
-  });
-  Ok(())
+    Ok(())
+  })
 }
 
 #[update]
 fn remove_authorized_caller(caller: Principal) -> Result<(), String> {
-  require_controller()?;
+  require_authorized_caller_management()?;
   AUTHORIZED_CALLERS.with(|callers| {
     callers.borrow_mut().remove(&caller);
   });
   Ok(())
 }
 
-#[query(guard = "require_controller")]
+#[query(guard = "require_authorized_caller_management")]
 fn get_authorized_callers() -> Vec<Principal> {
-  AUTHORIZED_CALLERS.with(|callers| {
-    callers
-      .borrow()
-      .iter()
-      .map(|entry| *entry.key())
-      .collect()
-  })
+  AUTHORIZED_CALLERS.with(|callers| callers.borrow().iter().take(MAX_AUTHORIZED_CALLERS).map(|entry| *entry.key()).collect())
 }
 
 #[query]
@@ -428,6 +520,9 @@ mod tests {
         map.remove(&k);
       }
     });
+    USER_ROLE_PERMISSIONS.with(|permissions| {
+      permissions.borrow_mut().clear();
+    });
     AUTH_MIGRATION_STATE.with(|s| {
       s.borrow_mut().set(0);
     });
@@ -437,6 +532,7 @@ mod tests {
   fn authorization_rejects_anonymous_even_if_marked() {
     assert!(check_caller_authorization(Principal::anonymous(), true, true).is_err());
     assert!(check_controller_authorization(Principal::anonymous(), true).is_err());
+    assert!(check_controller_authorization(sample_principal(8), false).is_err());
     assert!(validate_whitelist_target(&Principal::anonymous()).is_err());
   }
 
@@ -446,6 +542,66 @@ mod tests {
     assert!(check_caller_authorization(caller, false, false).is_err());
     assert!(check_caller_authorization(caller, true, false).is_ok());
     assert!(check_caller_authorization(caller, false, true).is_ok());
+  }
+
+  #[test]
+  fn authorized_caller_management_requires_the_wlmc_permission() {
+    reset_test_state();
+    let manager = sample_principal(8);
+    replace_user_role_permissions(vec![UserRolePermissionVo {
+      principal_id: manager.to_text(),
+      permission_codes: vec![AUTHORIZED_CALLER_MANAGEMENT_PERMISSION.to_string()],
+    }]);
+
+    assert!(check_authorized_caller_management_authorization(manager, has_permission(&manager, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),).is_ok());
+    assert!(check_authorized_caller_management_authorization(
+      sample_principal(7),
+      has_permission(&sample_principal(7), AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+    )
+    .is_err());
+    assert!(check_authorized_caller_management_authorization(Principal::anonymous(), true,).is_err());
+    reset_test_state();
+  }
+
+  #[test]
+  fn wlmc_system_config_accepts_admin_payload_with_additional_fields() {
+    #[derive(CandidType)]
+    struct AdminUserRolePermission {
+      principal_id: String,
+      is_controller: bool,
+      role_codes: Vec<String>,
+      permission_codes: Vec<String>,
+    }
+
+    #[derive(CandidType)]
+    struct AdminSystemConfig {
+      user_role_permissions: Vec<AdminUserRolePermission>,
+      dicts: Vec<String>,
+    }
+
+    let payload = AdminSystemConfig {
+      user_role_permissions: vec![AdminUserRolePermission {
+        principal_id: sample_principal(8).to_text(),
+        is_controller: false,
+        role_codes: vec!["random_oracle::authorized_caller::manager".to_string()],
+        permission_codes: vec![AUTHORIZED_CALLER_MANAGEMENT_PERMISSION.to_string()],
+      }],
+      dicts: vec!["additional admin configuration".to_string()],
+    };
+    let encoded = candid::encode_args((payload,)).unwrap();
+    let (decoded,) = candid::decode_args::<(SystemConfig,)>(&encoded).unwrap();
+
+    assert_eq!(
+      decoded.user_role_permissions[0].permission_codes,
+      vec![AUTHORIZED_CALLER_MANAGEMENT_PERMISSION.to_string()]
+    );
+  }
+
+  #[test]
+  fn authorized_caller_count_is_bounded_and_batch_capacity_is_checked() {
+    assert!(check_authorized_caller_capacity((MAX_AUTHORIZED_CALLERS - 1) as u64, 1,).is_ok());
+    assert!(check_authorized_caller_capacity(MAX_AUTHORIZED_CALLERS as u64, 1).is_err());
+    assert!(check_authorized_caller_capacity(0, MAX_AUTHORIZED_CALLERS + 1).is_err());
   }
 
   #[test]

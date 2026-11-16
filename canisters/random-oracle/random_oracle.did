@@ -24,6 +24,11 @@ type SeedPoolConfig = record {
   failure_cooldown_secs : nat64;
   target_size : nat32;
 };
+type SystemConfig = record { user_role_permissions : vec UserRolePermissionVo };
+type UserRolePermissionVo = record {
+  permission_codes : vec text;
+  principal_id : text;
+};
 service : () -> {
   add_authorized_caller : (principal) -> (Result);
   add_authorized_callers : (vec principal) -> (Result);
@@ -35,5 +40,7 @@ service : () -> {
   public_rand_seed : (nat64) -> (Result);
   public_rand_seeds : (vec nat64) -> (Result);
   remove_authorized_caller : (principal) -> (Result);
+  setup_subscribe : (principal) -> (text);
   update_seed_pool_config : (SeedPoolConfig) -> (Result);
+  update_system_configs : (SystemConfig) -> ();
 }
