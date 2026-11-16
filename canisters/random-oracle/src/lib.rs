@@ -28,8 +28,8 @@ use crate::transport_structures::SeedPoolStatus;
 use crate::{
   ic_rand_utils::get_on_chain_seed,
   memory_ids::{
-    AUTHORIZED_CALLERS_MEMORY_ID, AUTH_MIGRATION_STATE_MEMORY_ID, RAND_SEED_MEMORY_ID,
-    RAND_SEED_MEMORY_SEQ_MEMORY_ID, SEED_POOL_CONFIG_MEMORY_ID,
+    AUTHORIZED_CALLERS_MEMORY_ID, AUTHORIZED_CALLERS_SETUP_STATE_MEMORY_ID, RAND_SEED_MEMORY_ID, RAND_SEED_MEMORY_SEQ_MEMORY_ID,
+    SEED_POOL_CONFIG_MEMORY_ID,
   },
   stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
   transport_structures::RandSeedVO,
@@ -47,9 +47,8 @@ type RandSeedId = u64;
 pub type RawSeed = [u8; 32];
 pub type SeedIdGenerator = RefCell<Cell<RandSeedId, Memory>>;
 
-const AUTH_MIGRATION_DONE: u8 = 1;
-const MIGRATION_HEAD_SCAN_LIMIT: usize = 500;
-const MIGRATION_TAIL_SCAN_LIMIT: usize = 2_000;
+const AUTHORIZED_CALLERS_NEEDS_SETUP: u8 = 1;
+const AUTHORIZED_CALLERS_READY: u8 = 2;
 const MAX_AUTHORIZED_CALLERS: usize = 100;
 const AUTHORIZED_CALLER_MANAGEMENT_PERMISSION: &str = "random_oracle::authorized_caller::manage";
 
@@ -90,9 +89,9 @@ thread_local! {
 
   static USER_ROLE_PERMISSIONS: RefCell<HashMap<String, HashSet<String>>> = RefCell::new(HashMap::new());
 
-  pub static AUTH_MIGRATION_STATE: RefCell<Cell<u8, Memory>> = RefCell::new(
+  pub static AUTHORIZED_CALLERS_SETUP_STATE: RefCell<Cell<u8, Memory>> = RefCell::new(
     Cell::init(
-      MEMORY_MANAGER.with(|m| m.borrow().get(AUTH_MIGRATION_STATE_MEMORY_ID)),
+      MEMORY_MANAGER.with(|m| m.borrow().get(AUTHORIZED_CALLERS_SETUP_STATE_MEMORY_ID)),
       0_u8,
     )
   );
@@ -187,58 +186,76 @@ fn replace_user_role_permissions(user_role_permissions: Vec<UserRolePermissionVo
   });
 }
 
-/// 首次升级到带白名单版本时，按有界窗口扫描历史种子记录中的 `created_by` Principal，
-/// 自动将线上已有彩票业务 Canister 纳入授权白名单，避免大表全量遍历触发指令上限 Trap。
-fn migrate_historical_callers_once() {
-  let already_migrated = AUTH_MIGRATION_STATE.with(|state| *state.borrow().get() == AUTH_MIGRATION_DONE);
-  if already_migrated {
-    return;
+fn clear_authorized_callers() {
+  AUTHORIZED_CALLERS.with(|callers| {
+    let keys: Vec<Principal> = callers.borrow().iter().map(|entry| *entry.key()).collect();
+    let mut map = callers.borrow_mut();
+    for key in keys {
+      map.remove(&key);
+    }
+  });
+}
+
+/// The legacy migration cannot distinguish trusted canisters from arbitrary historical callers.
+fn prepare_authorized_callers_for_upgrade() {
+  let state = AUTHORIZED_CALLERS_SETUP_STATE.with(|state| *state.borrow().get());
+  if state == 0 {
+    clear_authorized_callers();
+    AUTHORIZED_CALLERS_SETUP_STATE.with(|state| {
+      state.borrow_mut().set(AUTHORIZED_CALLERS_NEEDS_SETUP);
+    });
+  }
+}
+
+fn validate_initial_authorized_callers(principals: Vec<Principal>) -> Result<BTreeSet<Principal>, String> {
+  if principals.is_empty() {
+    return Err("At least one trusted caller is required for initialization".to_string());
+  }
+  if principals.len() > MAX_AUTHORIZED_CALLERS {
+    return Err(format!("At most {} trusted callers may be initialized", MAX_AUTHORIZED_CALLERS));
+  }
+  for principal in &principals {
+    validate_whitelist_target(principal)?;
+  }
+  Ok(principals.into_iter().collect())
+}
+
+fn initialize_authorized_callers_from_config(principals: Vec<Principal>) -> Result<(), String> {
+  let state = AUTHORIZED_CALLERS_SETUP_STATE.with(|state| *state.borrow().get());
+  if state == AUTHORIZED_CALLERS_READY {
+    return Ok(());
+  }
+  if state != AUTHORIZED_CALLERS_NEEDS_SETUP {
+    return Err("Authorized callers are not ready for initialization".to_string());
   }
 
-  let mut discovered = Vec::new();
-  RAND_SEED_MAP.with(|seeds| {
-    let map = seeds.borrow();
-    for entry in map.iter().rev().take(MIGRATION_TAIL_SCAN_LIMIT) {
-      if let Some(principal) = entry.value().created_by {
-        if principal != Principal::anonymous() && !discovered.contains(&principal) {
-          discovered.push(principal);
-        }
-      }
-    }
-    for entry in map.iter().take(MIGRATION_HEAD_SCAN_LIMIT) {
-      if let Some(principal) = entry.value().created_by {
-        if principal != Principal::anonymous() && !discovered.contains(&principal) {
-          discovered.push(principal);
-        }
-      }
-    }
-  });
-
-  AUTHORIZED_CALLERS.with(|callers| {
+  let unique_principals = validate_initial_authorized_callers(principals)?;
+  AUTHORIZED_CALLERS.with(|callers| -> Result<(), String> {
     let mut map = callers.borrow_mut();
-    for principal in discovered {
-      if map.len() >= MAX_AUTHORIZED_CALLERS as u64 {
-        break;
-      }
+    let added_count = unique_principals.iter().filter(|principal| !map.contains_key(principal)).count();
+    check_authorized_caller_capacity(map.len(), added_count)?;
+    for principal in unique_principals {
       map.insert(principal, ());
     }
-  });
+    Ok(())
+  })?;
 
-  AUTH_MIGRATION_STATE.with(|state| {
-    state.borrow_mut().set(AUTH_MIGRATION_DONE);
+  AUTHORIZED_CALLERS_SETUP_STATE.with(|state| {
+    state.borrow_mut().set(AUTHORIZED_CALLERS_READY);
   });
+  Ok(())
 }
 
 #[init]
 fn init() {
-  AUTH_MIGRATION_STATE.with(|state| {
-    state.borrow_mut().set(AUTH_MIGRATION_DONE);
+  AUTHORIZED_CALLERS_SETUP_STATE.with(|state| {
+    state.borrow_mut().set(AUTHORIZED_CALLERS_NEEDS_SETUP);
   });
 }
 
 #[post_upgrade]
 fn post_upgrade() {
-  migrate_historical_callers_once();
+  prepare_authorized_callers_for_upgrade();
 }
 
 /// 仅用于节省匿名垃圾请求解码 Cycles；真实安全边界由各方法内共识级校验执行。
@@ -250,6 +267,7 @@ fn inspect_message() {
     | "public_rand_seed"
     | "public_rand_seeds"
     | "update_seed_pool_config"
+    | "initialize_authorized_callers"
     | "add_authorized_caller"
     | "add_authorized_callers"
     | "remove_authorized_caller" => {
@@ -331,6 +349,12 @@ fn update_system_configs(config: SystemConfig) {
   }
 
   replace_user_role_permissions(config.user_role_permissions);
+}
+
+#[update]
+fn initialize_authorized_callers(principals: Vec<Principal>) -> Result<(), String> {
+  require_controller()?;
+  initialize_authorized_callers_from_config(principals)
 }
 
 #[update]
@@ -513,17 +537,11 @@ mod tests {
         map.remove(&k);
       }
     });
-    AUTHORIZED_CALLERS.with(|m| {
-      let keys: Vec<Principal> = m.borrow().iter().map(|e| *e.key()).collect();
-      let mut map = m.borrow_mut();
-      for k in keys {
-        map.remove(&k);
-      }
-    });
+    clear_authorized_callers();
     USER_ROLE_PERMISSIONS.with(|permissions| {
       permissions.borrow_mut().clear();
     });
-    AUTH_MIGRATION_STATE.with(|s| {
+    AUTHORIZED_CALLERS_SETUP_STATE.with(|s| {
       s.borrow_mut().set(0);
     });
   }
@@ -605,6 +623,21 @@ mod tests {
   }
 
   #[test]
+  fn authorized_caller_initialization_rejects_empty_anonymous_and_oversized_input() {
+    reset_test_state();
+    AUTHORIZED_CALLERS_SETUP_STATE.with(|state| {
+      state.borrow_mut().set(AUTHORIZED_CALLERS_NEEDS_SETUP);
+    });
+
+    assert!(initialize_authorized_callers_from_config(Vec::new()).is_err());
+    assert!(initialize_authorized_callers_from_config(vec![Principal::anonymous()]).is_err());
+    let oversized_callers = (0..=MAX_AUTHORIZED_CALLERS).map(|id| sample_principal(id as u8)).collect();
+    assert!(initialize_authorized_callers_from_config(oversized_callers).is_err());
+    assert_eq!(AUTHORIZED_CALLERS.with(|callers| callers.borrow().len()), 0);
+    reset_test_state();
+  }
+
+  #[test]
   fn game_creator_match_seed_candid_storable_roundtrip() {
     let caller = sample_principal(9);
     let record = RandSeed {
@@ -626,73 +659,25 @@ mod tests {
   }
 
   #[test]
-  fn historical_caller_migration_populates_whitelist_once_and_ignores_anonymous() {
+  fn upgrade_discards_unverified_callers_and_initialization_is_explicit_and_idempotent() {
     reset_test_state();
-    let keno_canister = sample_principal(1);
-    let daily4_canister = sample_principal(2);
-    let later_unmigrated = sample_principal(3);
-
-    RAND_SEED_MAP.with(|m| {
-      let mut map = m.borrow_mut();
-      map.insert(
-        1,
-        RandSeed {
-          idx: Some(1),
-          seed: Some([1u8; 32]),
-          public_time: None,
-          create_time: Some(100),
-          created_by: Some(keno_canister),
-          use_for: Some(BusinessType::Keno),
-          scene: Some(Scene::DrawNumbers),
-        },
-      );
-      map.insert(
-        2,
-        RandSeed {
-          idx: Some(2),
-          seed: Some([2u8; 32]),
-          public_time: None,
-          create_time: Some(200),
-          created_by: Some(Principal::anonymous()),
-          use_for: Some(BusinessType::Daily4),
-          scene: Some(Scene::DrawNumbers),
-        },
-      );
-      map.insert(
-        3,
-        RandSeed {
-          idx: Some(3),
-          seed: Some([3u8; 32]),
-          public_time: None,
-          create_time: Some(300),
-          created_by: Some(daily4_canister),
-          use_for: Some(BusinessType::Daily4),
-          scene: Some(Scene::DrawNumbers),
-        },
-      );
+    let unverified_caller = sample_principal(1);
+    let trusted_caller = sample_principal(2);
+    let ignored_caller = sample_principal(3);
+    AUTHORIZED_CALLERS.with(|callers| {
+      callers.borrow_mut().insert(unverified_caller, ());
     });
 
-    migrate_historical_callers_once();
-    assert!(is_whitelisted(&keno_canister));
-    assert!(is_whitelisted(&daily4_canister));
-    assert!(!is_whitelisted(&Principal::anonymous()));
+    prepare_authorized_callers_for_upgrade();
+    assert!(!is_whitelisted(&unverified_caller));
+    assert_eq!(AUTHORIZED_CALLERS_SETUP_STATE.with(|state| *state.borrow().get()), AUTHORIZED_CALLERS_NEEDS_SETUP);
 
-    // Subsequent calls must not re-run migration after AUTH_MIGRATION_DONE is set.
-    RAND_SEED_MAP.with(|m| {
-      m.borrow_mut().insert(
-        4,
-        RandSeed {
-          idx: Some(4),
-          seed: Some([4u8; 32]),
-          public_time: None,
-          create_time: Some(400),
-          created_by: Some(later_unmigrated),
-          use_for: Some(BusinessType::Roulette),
-          scene: Some(Scene::DrawNumbers),
-        },
-      );
-    });
-    migrate_historical_callers_once();
-    assert!(!is_whitelisted(&later_unmigrated));
+    initialize_authorized_callers_from_config(vec![trusted_caller]).unwrap();
+    initialize_authorized_callers_from_config(vec![ignored_caller]).unwrap();
+    assert!(is_whitelisted(&trusted_caller));
+    assert!(!is_whitelisted(&unverified_caller));
+    assert!(!is_whitelisted(&ignored_caller));
+    prepare_authorized_callers_for_upgrade();
+    assert!(is_whitelisted(&trusted_caller));
   }
 }
