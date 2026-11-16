@@ -15,6 +15,25 @@ Foundamental Randomness Generation Function: https://docs.internetcomputer.org/c
 - **A web verification app** for user-facing verification workflows.
 - **Game documentation** that explains how a player or auditor can reproduce supported game results.
 
+## Random oracle API compatibility
+
+The original `generate_rand_seed`, `get_public_rand_seed`, and
+`get_public_rand_seeds` methods retain their original Candid variants.
+Published seeds with newer business types or scenes are returned as `null` by
+the original query methods. Use `generate_rand_seed_v2`,
+`get_public_rand_seed_v2`, and `get_public_rand_seeds_v2` to generate and
+verify all supported variants, including `GameCreator` and `MatchSeed`.
+The v2 batch query accepts at most 100 seed IDs per call.
+Both generation methods apply the same authorized-caller guard; unpublished
+seeds remain unavailable from either query version.
+
+Deploy the compatible canister before moving new consumers to the v2 methods.
+Before enabling new variants, verify both legacy and v2 consumers and retain a
+recovery snapshot. Once a new-variant seed has been stored, do not roll back to
+a canister that cannot decode it; roll back consumers independently or deploy a
+compatible fix. Restoring an older snapshot discards subsequent state and
+requires explicit operational approval and reconciliation.
+
 ## Repository structure
 
 ```text

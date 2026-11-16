@@ -9,6 +9,26 @@ type BusinessType = variant {
   GameCreator;
   FruitsGarden;
 };
+type LegacyBusinessType = variant {
+  LuckyNickel;
+  Keno;
+  Daily4;
+  QuickQuid;
+  Roulette;
+  Mines;
+  RoyalTreys;
+  FruitsGarden;
+};
+type LegacyRandSeedVO = record {
+  idx : nat64;
+  seed : blob;
+  use_for : LegacyBusinessType;
+  created_by : text;
+  scene : LegacyScene;
+  create_time : nat64;
+  public_time : nat64;
+};
+type LegacyScene = variant { GenerateTicketPool; Shuffle; DrawNumbers };
 type RandSeedVO = record {
   idx : nat64;
   seed : blob;
@@ -32,10 +52,13 @@ type UserRolePermissionVo = record {
 service : () -> {
   add_authorized_caller : (principal) -> (Result);
   add_authorized_callers : (vec principal) -> (Result);
-  generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
+  generate_rand_seed : (LegacyBusinessType, LegacyScene) -> (LegacyRandSeedVO);
+  generate_rand_seed_v2 : (BusinessType, Scene) -> (RandSeedVO);
   get_authorized_callers : () -> (vec principal) query;
-  get_public_rand_seed : (nat64) -> (opt RandSeedVO) query;
-  get_public_rand_seeds : (vec nat64) -> (vec opt RandSeedVO) query;
+  get_public_rand_seed : (nat64) -> (opt LegacyRandSeedVO) query;
+  get_public_rand_seed_v2 : (nat64) -> (opt RandSeedVO) query;
+  get_public_rand_seeds : (vec nat64) -> (vec opt LegacyRandSeedVO) query;
+  get_public_rand_seeds_v2 : (vec nat64) -> (vec opt RandSeedVO) query;
   get_seed_pool_config : () -> (SeedPoolConfig) query;
   initialize_authorized_callers : (vec principal) -> (Result);
   public_rand_seed : (nat64) -> (Result);

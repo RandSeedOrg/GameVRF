@@ -32,7 +32,7 @@ use crate::{
     SEED_POOL_CONFIG_MEMORY_ID,
   },
   stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
-  transport_structures::RandSeedVO,
+  transport_structures::{LegacyBusinessType, LegacyRandSeedVO, LegacyScene, RandSeedVO},
 };
 
 mod ic_rand_utils;
@@ -50,6 +50,7 @@ pub type SeedIdGenerator = RefCell<Cell<RandSeedId, Memory>>;
 const AUTHORIZED_CALLERS_NEEDS_SETUP: u8 = 1;
 const AUTHORIZED_CALLERS_READY: u8 = 2;
 const MAX_AUTHORIZED_CALLERS: usize = 100;
+const MAX_V2_SEED_LOOKUP_BATCH: usize = 100;
 const AUTHORIZED_CALLER_MANAGEMENT_PERMISSION: &str = "random_oracle::authorized_caller::manage";
 
 #[derive(CandidType, Deserialize)]
@@ -264,6 +265,7 @@ fn inspect_message() {
   let method = msg_method_name();
   match method.as_str() {
     "generate_rand_seed"
+    | "generate_rand_seed_v2"
     | "public_rand_seed"
     | "public_rand_seeds"
     | "update_seed_pool_config"
@@ -322,7 +324,15 @@ async fn acquire_seed_from_pool() -> RawSeed {
 }
 
 #[update(guard = "require_authorized_caller")]
-async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+async fn generate_rand_seed(use_for: LegacyBusinessType, scene: LegacyScene) -> LegacyRandSeedVO {
+  let seed = acquire_seed_from_pool().await;
+  store_rand_seed(seed, use_for.into(), scene.into())
+    .try_into()
+    .expect("legacy generation only uses legacy variants")
+}
+
+#[update(guard = "require_authorized_caller")]
+async fn generate_rand_seed_v2(use_for: BusinessType, scene: Scene) -> RandSeedVO {
   let seed = acquire_seed_from_pool().await;
   store_rand_seed(seed, use_for, scene)
 }
@@ -491,7 +501,20 @@ fn public_rand_seeds(indexes: Vec<u64>) -> Result<(), String> {
 }
 
 #[query]
-fn get_public_rand_seed(index: u64) -> Option<RandSeedVO> {
+fn get_public_rand_seed(index: u64) -> Option<LegacyRandSeedVO> {
+  get_public_rand_seed_v2(index)?.try_into().ok()
+}
+
+#[query]
+fn get_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<LegacyRandSeedVO>> {
+  lookup_public_rand_seeds(indexes)
+    .into_iter()
+    .map(|seed| seed.and_then(|seed| seed.try_into().ok()))
+    .collect()
+}
+
+#[query]
+fn get_public_rand_seed_v2(index: u64) -> Option<RandSeedVO> {
   RAND_SEED_MAP.with(|seeds| {
     let seed = seeds.borrow().get(&index)?;
     if seed.public_time.is_none() {
@@ -502,7 +525,14 @@ fn get_public_rand_seed(index: u64) -> Option<RandSeedVO> {
 }
 
 #[query]
-fn get_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
+fn get_public_rand_seeds_v2(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
+  if indexes.len() > MAX_V2_SEED_LOOKUP_BATCH {
+    ic_cdk::trap("At most 100 seed IDs may be queried at once");
+  }
+  lookup_public_rand_seeds(indexes)
+}
+
+fn lookup_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
   RAND_SEED_MAP.with(|seeds| {
     let seeds = seeds.borrow();
     indexes
@@ -656,6 +686,123 @@ mod tests {
     assert_eq!(decoded.get_use_for(), BusinessType::GameCreator);
     assert_eq!(decoded.get_scene(), Scene::MatchSeed);
     assert_eq!(decoded.get_created_by(), caller.to_text());
+  }
+
+  #[test]
+  fn public_seed_queries_keep_legacy_variants_and_hide_new_variants() {
+    reset_test_state();
+    let records = [
+      (1, BusinessType::Daily4, Scene::DrawNumbers, Some(10)),
+      (2, BusinessType::GameCreator, Scene::DrawNumbers, Some(10)),
+      (3, BusinessType::Daily4, Scene::MatchSeed, Some(10)),
+      (4, BusinessType::GameCreator, Scene::MatchSeed, Some(10)),
+      (5, BusinessType::Daily4, Scene::DrawNumbers, None),
+    ];
+    RAND_SEED_MAP.with(|seeds| {
+      let mut seeds = seeds.borrow_mut();
+      for (idx, use_for, scene, public_time) in records {
+        seeds.insert(idx, RandSeed {
+          idx: Some(idx),
+          seed: Some([idx as u8; 32]),
+          public_time,
+          create_time: Some(5),
+          created_by: Some(sample_principal(9)),
+          use_for: Some(use_for),
+          scene: Some(scene),
+        });
+      }
+    });
+
+    let legacy = get_public_rand_seed(1).unwrap();
+    assert_eq!(legacy.use_for, LegacyBusinessType::Daily4);
+    assert_eq!(legacy.scene, LegacyScene::DrawNumbers);
+    let legacy_batch = get_public_rand_seeds(vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(legacy_batch.iter().map(Option::is_some).collect::<Vec<_>>(), vec![true, false, false, false, false, false]);
+    let encoded = candid::encode_one(legacy_batch).unwrap();
+    let decoded: Vec<Option<LegacyRandSeedVO>> = candid::decode_one(&encoded).unwrap();
+    assert_eq!(decoded[0].as_ref().unwrap().idx, 1);
+    assert!(decoded[1..].iter().all(Option::is_none));
+
+    let v2 = get_public_rand_seed_v2(4).unwrap();
+    assert_eq!(v2.use_for, BusinessType::GameCreator);
+    assert_eq!(v2.scene, Scene::MatchSeed);
+    let v2_batch = get_public_rand_seeds_v2(vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(v2_batch.iter().map(Option::is_some).collect::<Vec<_>>(), vec![true, true, true, true, false, false]);
+    reset_test_state();
+  }
+
+  #[test]
+  fn legacy_seed_method_types_are_compatible_with_old_client_idl() {
+    #[allow(dead_code)]
+    #[derive(CandidType)]
+    enum OldBusinessType {
+      LuckyNickel, QuickQuid, RoyalTreys, Daily4, Mines, Keno, FruitsGarden, Roulette,
+    }
+    #[allow(dead_code)]
+    #[derive(CandidType)]
+    enum OldScene { GenerateTicketPool, Shuffle, DrawNumbers }
+    #[derive(CandidType)]
+    struct OldRandSeedVO {
+      idx: u64,
+      seed: [u8; 32],
+      public_time: u64,
+      create_time: u64,
+      created_by: String,
+      use_for: OldBusinessType,
+      scene: OldScene,
+    }
+    #[derive(CandidType)]
+    struct OldStableSeed {
+      idx: Option<u64>,
+      seed: Option<[u8; 32]>,
+      public_time: Option<u64>,
+      create_time: Option<u64>,
+      created_by: Option<Principal>,
+      use_for: Option<OldBusinessType>,
+      scene: Option<OldScene>,
+    }
+
+    let old_record = OldStableSeed {
+      idx: Some(12),
+      seed: Some([42; 32]),
+      public_time: Some(10),
+      create_time: Some(5),
+      created_by: Some(sample_principal(9)),
+      use_for: Some(OldBusinessType::Daily4),
+      scene: Some(OldScene::DrawNumbers),
+    };
+    let bytes = candid::encode_one(old_record).unwrap();
+    let upgraded = RandSeed::from_bytes(std::borrow::Cow::Owned(bytes));
+    assert_eq!(upgraded.get_idx(), 12);
+    assert_eq!(upgraded.get_use_for(), BusinessType::Daily4);
+    assert_eq!(upgraded.get_scene(), Scene::DrawNumbers);
+
+    use candid::types::subtype::{subtype_with_config, Gamma, OptReport};
+    use candid::types::TypeEnv;
+    let pairs = [
+      (
+        candid::func!((LegacyBusinessType, LegacyScene) -> (LegacyRandSeedVO)),
+        candid::func!((OldBusinessType, OldScene) -> (OldRandSeedVO)),
+      ),
+      (
+        candid::func!((u64) -> (Option<LegacyRandSeedVO>) query),
+        candid::func!((u64) -> (Option<OldRandSeedVO>) query),
+      ),
+      (
+        candid::func!((Vec<u64>) -> (Vec<Option<LegacyRandSeedVO>>) query),
+        candid::func!((Vec<u64>) -> (Vec<Option<OldRandSeedVO>>) query),
+      ),
+    ];
+    for (new_type, old_type) in pairs {
+      subtype_with_config(OptReport::Error, &mut Gamma::new(), &TypeEnv::new(), &new_type, &old_type).unwrap();
+    }
+  }
+
+  #[test]
+  fn v2_seed_batch_rejects_more_than_100_ids_without_limiting_legacy_queries() {
+    assert_eq!(get_public_rand_seeds_v2(vec![0; 100]).len(), 100);
+    assert!(std::panic::catch_unwind(|| get_public_rand_seeds_v2(vec![0; 101])).is_err());
+    assert_eq!(get_public_rand_seeds(vec![0; 101]).len(), 101);
   }
 
   #[test]
