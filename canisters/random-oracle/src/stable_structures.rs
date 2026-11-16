@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::TimestampNano;
 
-#[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, CandidType)]
 pub enum BusinessType {
   LuckyNickel,
   QuickQuid,
@@ -16,6 +16,7 @@ pub enum BusinessType {
   Keno,
   FruitsGarden,
   Roulette,
+  GameCreator,
 }
 
 impl Default for BusinessType {
@@ -24,11 +25,12 @@ impl Default for BusinessType {
   }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, CandidType)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, CandidType)]
 pub enum Scene {
   GenerateTicketPool,
   Shuffle,
   DrawNumbers,
+  MatchSeed,
 }
 
 impl Default for Scene {
