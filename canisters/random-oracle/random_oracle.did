@@ -52,7 +52,7 @@ type UserRolePermissionVo = record {
 service : () -> {
   add_authorized_caller : (principal) -> (Result);
   add_authorized_callers : (vec principal) -> (Result);
-  generate_rand_seed : (BusinessType, Scene) -> (RandSeedVO);
+  generate_rand_seed : (LegacyBusinessType, LegacyScene) -> (LegacyRandSeedVO);
   generate_rand_seed_v2 : (BusinessType, Scene) -> (RandSeedVO);
   get_authorized_callers : () -> (vec principal) query;
   get_public_rand_seed : (nat64) -> (opt LegacyRandSeedVO) query;

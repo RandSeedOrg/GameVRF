@@ -25,8 +25,6 @@ use serde::Deserialize;
 
 #[cfg(feature = "sensitive_debug_api")]
 use crate::transport_structures::SeedPoolStatus;
-#[cfg(test)]
-use crate::transport_structures::{LegacyBusinessType, LegacyScene};
 use crate::{
   ic_rand_utils::get_on_chain_seed,
   memory_ids::{
@@ -34,7 +32,7 @@ use crate::{
     SEED_POOL_CONFIG_MEMORY_ID,
   },
   stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
-  transport_structures::{LegacyRandSeedVO, RandSeedVO},
+  transport_structures::{LegacyBusinessType, LegacyRandSeedVO, LegacyScene, RandSeedVO},
 };
 
 mod ic_rand_utils;
@@ -140,11 +138,15 @@ fn has_permission(caller: &Principal, permission_code: &str) -> bool {
   })
 }
 
-fn check_authorized_caller_management_authorization(caller: Principal, permission_granted: bool) -> Result<(), String> {
+fn check_authorized_caller_management_authorization(
+  caller: Principal,
+  permission_granted: bool,
+  caller_is_controller: bool,
+) -> Result<(), String> {
   if caller == Principal::anonymous() {
     return Err("Anonymous caller is not allowed".to_string());
   }
-  if !permission_granted {
+  if !permission_granted && !caller_is_controller {
     return Err("Caller does not have permission to manage random oracle authorized callers".to_string());
   }
   Ok(())
@@ -152,7 +154,11 @@ fn check_authorized_caller_management_authorization(caller: Principal, permissio
 
 fn require_authorized_caller_management() -> Result<(), String> {
   let caller = msg_caller();
-  check_authorized_caller_management_authorization(caller, has_permission(&caller, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION))
+  check_authorized_caller_management_authorization(
+    caller,
+    has_permission(&caller, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+    is_controller(&caller),
+  )
 }
 
 fn require_authorized_caller() -> Result<(), String> {
@@ -336,9 +342,11 @@ async fn acquire_seed_from_pool() -> RawSeed {
 }
 
 #[update(guard = "require_authorized_caller")]
-async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+async fn generate_rand_seed(use_for: LegacyBusinessType, scene: LegacyScene) -> LegacyRandSeedVO {
   let seed = acquire_seed_from_pool().await;
-  store_rand_seed(seed, use_for, scene)
+  store_rand_seed(seed, use_for.into(), scene.into())
+    .try_into()
+    .expect("legacy generation only uses legacy variants")
 }
 
 #[update(guard = "require_authorized_caller")]
@@ -603,21 +611,30 @@ mod tests {
   }
 
   #[test]
-  fn authorized_caller_management_requires_the_wlmc_permission() {
+  fn authorized_caller_management_allows_controllers_or_wlmc_managers_only() {
     reset_test_state();
     let manager = sample_principal(8);
+    let controller = sample_principal(9);
+    let unauthorized = sample_principal(7);
     replace_user_role_permissions(vec![UserRolePermissionVo {
       principal_id: manager.to_text(),
       permission_codes: vec![AUTHORIZED_CALLER_MANAGEMENT_PERMISSION.to_string()],
     }]);
 
-    assert!(check_authorized_caller_management_authorization(manager, has_permission(&manager, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),).is_ok());
     assert!(check_authorized_caller_management_authorization(
-      sample_principal(7),
-      has_permission(&sample_principal(7), AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+      manager,
+      has_permission(&manager, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+      false,
+    )
+    .is_ok());
+    assert!(check_authorized_caller_management_authorization(controller, false, true).is_ok());
+    assert!(check_authorized_caller_management_authorization(
+      unauthorized,
+      has_permission(&unauthorized, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+      false,
     )
     .is_err());
-    assert!(check_authorized_caller_management_authorization(Principal::anonymous(), true,).is_err());
+    assert!(check_authorized_caller_management_authorization(Principal::anonymous(), true, true).is_err());
     reset_test_state();
   }
 
@@ -699,7 +716,7 @@ mod tests {
   }
 
   #[test]
-  fn extended_generation_wire_format_decodes_for_legacy_values() {
+  fn versioned_generation_wire_formats_preserve_legacy_values() {
     let businesses = [
       LegacyBusinessType::LuckyNickel, LegacyBusinessType::QuickQuid, LegacyBusinessType::RoyalTreys,
       LegacyBusinessType::Daily4, LegacyBusinessType::Mines, LegacyBusinessType::Keno,
@@ -709,17 +726,18 @@ mod tests {
     for business in businesses {
       for scene in &scenes {
         let args = candid::encode_args((business.clone(), scene.clone())).unwrap();
-        let (use_for, decoded_scene): (BusinessType, Scene) = candid::decode_args(&args).unwrap();
+        let (use_for, decoded_scene): (LegacyBusinessType, LegacyScene) = candid::decode_args(&args).unwrap();
         let response = RandSeedVO::from(RandSeed {
           idx: Some(1),
           seed: Some([42; 32]),
           public_time: None,
           create_time: Some(5),
           created_by: Some(sample_principal(9)),
-          use_for: Some(use_for),
-          scene: Some(decoded_scene),
+          use_for: Some(use_for.into()),
+          scene: Some(decoded_scene.into()),
         });
-        let bytes = candid::encode_one(response).unwrap();
+        let legacy_response: LegacyRandSeedVO = response.try_into().unwrap();
+        let bytes = candid::encode_one(legacy_response).unwrap();
         let legacy: LegacyRandSeedVO = candid::decode_one(&bytes).unwrap();
         assert_eq!(legacy.use_for, business);
         assert_eq!(&legacy.scene, scene);
@@ -727,6 +745,7 @@ mod tests {
     }
 
     let args = candid::encode_args((BusinessType::GameCreator, Scene::MatchSeed)).unwrap();
+    assert!(candid::decode_args::<(LegacyBusinessType, LegacyScene)>(&args).is_err());
     let (business, scene): (BusinessType, Scene) = candid::decode_args(&args).unwrap();
     assert_eq!(business, BusinessType::GameCreator);
     assert_eq!(scene, Scene::MatchSeed);
@@ -839,6 +858,10 @@ mod tests {
     use candid::types::TypeEnv;
     let pairs = [
       (
+        candid::func!((LegacyBusinessType, LegacyScene) -> (LegacyRandSeedVO)),
+        candid::func!((OldBusinessType, OldScene) -> (OldRandSeedVO)),
+      ),
+      (
         candid::func!((u64) -> (Option<LegacyRandSeedVO>) query),
         candid::func!((u64) -> (Option<OldRandSeedVO>) query),
       ),
@@ -850,6 +873,9 @@ mod tests {
     for (new_type, old_type) in pairs {
       subtype_with_config(OptReport::Error, &mut Gamma::new(), &TypeEnv::new(), &new_type, &old_type).unwrap();
     }
+    let service = __export_service();
+    assert!(service.contains("generate_rand_seed : (LegacyBusinessType, LegacyScene) -> (LegacyRandSeedVO)"));
+    assert!(service.contains("generate_rand_seed_v2 : (BusinessType, Scene) -> (RandSeedVO)"));
   }
 
   #[test]
