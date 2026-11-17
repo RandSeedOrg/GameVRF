@@ -17,19 +17,31 @@ Foundamental Randomness Generation Function: https://docs.internetcomputer.org/c
 
 ## Random oracle API compatibility
 
-The original `generate_rand_seed`, `get_public_rand_seed`, and
-`get_public_rand_seeds` methods retain their original Candid variants.
-Published seeds with newer business types or scenes are returned as `null` by
-the original query methods. Use `generate_rand_seed_v2`,
-`get_public_rand_seed_v2`, and `get_public_rand_seeds_v2` to generate and
-verify all supported variants, including `GameCreator` and `MatchSeed`.
+`generate_rand_seed` accepts and returns both legacy and extended variants, as
+does `generate_rand_seed_v2`. Generation returns the same business type and
+scene supplied by the caller, so existing clients that send only legacy
+variants can decode their responses. The wider generation response is not a
+formal Candid subtype of the legacy signature; verify actual client runtimes
+before upgrading the canister.
+
+The original `get_public_rand_seed` and `get_public_rand_seeds` query methods
+retain their original Candid variants and return `null` for published seeds
+with newer business types or scenes. Use `get_public_rand_seed_v2` and
+`get_public_rand_seeds_v2` to verify all supported variants, including
+`GameCreator` and `MatchSeed`.
 The v2 batch query accepts at most 100 seed IDs per call.
 Both generation methods apply the same authorized-caller guard; unpublished
 seeds remain unavailable from either query version.
 
-Deploy the compatible canister before moving new consumers to the v2 methods.
-Before enabling new variants, verify both legacy and v2 consumers and retain a
-recovery snapshot. Once a new-variant seed has been stored, do not roll back to
+The controller-only caller bootstrap succeeds on a repeat call only if the
+requested set exactly matches the current set; otherwise it returns an error
+without changing authorization. Reconcile differences through authorized
+caller management, rather than retrying the bootstrap with stale configuration.
+
+Deploy the compatible canister before moving new consumers to the v2 queries.
+Before enabling new variants, verify legacy generation and both query versions
+in the target environments and retain a recovery snapshot. Once a new-variant
+seed has been stored, do not roll back to
 a canister that cannot decode it; roll back consumers independently or deploy a
 compatible fix. Restoring an older snapshot discards subsequent state and
 requires explicit operational approval and reconciliation.
