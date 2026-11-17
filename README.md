@@ -35,6 +35,10 @@ The controller-only caller bootstrap succeeds on a repeat call only if the
 requested set exactly matches the current set; otherwise it returns an error
 without changing authorization. Reconcile differences through authorized
 caller management, rather than retrying the bootstrap with stale configuration.
+Random-oracle controllers may call the add, remove, and list authorized-caller
+methods directly. Non-controller callers must hold the WLMC
+`random_oracle::authorized_caller::manage` permission. Calls through the Admin
+proxy still require the operator's assigned manager permission.
 
 The preceding compatibility release (`53da050`) accepts extended variants on
 both generation methods. Before deploying this release, deploy that release,

@@ -138,11 +138,15 @@ fn has_permission(caller: &Principal, permission_code: &str) -> bool {
   })
 }
 
-fn check_authorized_caller_management_authorization(caller: Principal, permission_granted: bool) -> Result<(), String> {
+fn check_authorized_caller_management_authorization(
+  caller: Principal,
+  permission_granted: bool,
+  caller_is_controller: bool,
+) -> Result<(), String> {
   if caller == Principal::anonymous() {
     return Err("Anonymous caller is not allowed".to_string());
   }
-  if !permission_granted {
+  if !permission_granted && !caller_is_controller {
     return Err("Caller does not have permission to manage random oracle authorized callers".to_string());
   }
   Ok(())
@@ -150,7 +154,11 @@ fn check_authorized_caller_management_authorization(caller: Principal, permissio
 
 fn require_authorized_caller_management() -> Result<(), String> {
   let caller = msg_caller();
-  check_authorized_caller_management_authorization(caller, has_permission(&caller, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION))
+  check_authorized_caller_management_authorization(
+    caller,
+    has_permission(&caller, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+    is_controller(&caller),
+  )
 }
 
 fn require_authorized_caller() -> Result<(), String> {
@@ -603,21 +611,30 @@ mod tests {
   }
 
   #[test]
-  fn authorized_caller_management_requires_the_wlmc_permission() {
+  fn authorized_caller_management_allows_controllers_or_wlmc_managers_only() {
     reset_test_state();
     let manager = sample_principal(8);
+    let controller = sample_principal(9);
+    let unauthorized = sample_principal(7);
     replace_user_role_permissions(vec![UserRolePermissionVo {
       principal_id: manager.to_text(),
       permission_codes: vec![AUTHORIZED_CALLER_MANAGEMENT_PERMISSION.to_string()],
     }]);
 
-    assert!(check_authorized_caller_management_authorization(manager, has_permission(&manager, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),).is_ok());
     assert!(check_authorized_caller_management_authorization(
-      sample_principal(7),
-      has_permission(&sample_principal(7), AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+      manager,
+      has_permission(&manager, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+      false,
+    )
+    .is_ok());
+    assert!(check_authorized_caller_management_authorization(controller, false, true).is_ok());
+    assert!(check_authorized_caller_management_authorization(
+      unauthorized,
+      has_permission(&unauthorized, AUTHORIZED_CALLER_MANAGEMENT_PERMISSION),
+      false,
     )
     .is_err());
-    assert!(check_authorized_caller_management_authorization(Principal::anonymous(), true,).is_err());
+    assert!(check_authorized_caller_management_authorization(Principal::anonymous(), true, true).is_err());
     reset_test_state();
   }
 
