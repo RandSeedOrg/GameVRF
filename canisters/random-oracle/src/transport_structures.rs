@@ -15,6 +15,21 @@ pub enum LegacyBusinessType {
   Roulette,
 }
 
+impl From<LegacyBusinessType> for BusinessType {
+  fn from(value: LegacyBusinessType) -> Self {
+    match value {
+      LegacyBusinessType::LuckyNickel => Self::LuckyNickel,
+      LegacyBusinessType::QuickQuid => Self::QuickQuid,
+      LegacyBusinessType::RoyalTreys => Self::RoyalTreys,
+      LegacyBusinessType::Daily4 => Self::Daily4,
+      LegacyBusinessType::Mines => Self::Mines,
+      LegacyBusinessType::Keno => Self::Keno,
+      LegacyBusinessType::FruitsGarden => Self::FruitsGarden,
+      LegacyBusinessType::Roulette => Self::Roulette,
+    }
+  }
+}
+
 impl TryFrom<BusinessType> for LegacyBusinessType {
   type Error = ();
 
@@ -38,6 +53,16 @@ pub enum LegacyScene {
   GenerateTicketPool,
   Shuffle,
   DrawNumbers,
+}
+
+impl From<LegacyScene> for Scene {
+  fn from(value: LegacyScene) -> Self {
+    match value {
+      LegacyScene::GenerateTicketPool => Self::GenerateTicketPool,
+      LegacyScene::Shuffle => Self::Shuffle,
+      LegacyScene::DrawNumbers => Self::DrawNumbers,
+    }
+  }
 }
 
 impl TryFrom<Scene> for LegacyScene {

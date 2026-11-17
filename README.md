@@ -17,12 +17,10 @@ Foundamental Randomness Generation Function: https://docs.internetcomputer.org/c
 
 ## Random oracle API compatibility
 
-`generate_rand_seed` accepts and returns both legacy and extended variants, as
-does `generate_rand_seed_v2`. Generation returns the same business type and
-scene supplied by the caller, so existing clients that send only legacy
-variants can decode their responses. The wider generation response is not a
-formal Candid subtype of the legacy signature; verify actual client runtimes
-before upgrading the canister.
+`generate_rand_seed` accepts and returns only legacy variants. Use
+`generate_rand_seed_v2` for extended variants such as `GameCreator` and
+`MatchSeed`. The legacy signature is compatible with the original Candid
+interface.
 
 The original `get_public_rand_seed` and `get_public_rand_seeds` query methods
 retain their original Candid variants and return `null` for published seeds
@@ -38,13 +36,18 @@ requested set exactly matches the current set; otherwise it returns an error
 without changing authorization. Reconcile differences through authorized
 caller management, rather than retrying the bootstrap with stale configuration.
 
-Deploy the compatible canister before moving new consumers to the v2 queries.
-Before enabling new variants, verify legacy generation and both query versions
-in the target environments and retain a recovery snapshot. Once a new-variant
-seed has been stored, do not roll back to
-a canister that cannot decode it; roll back consumers independently or deploy a
-compatible fix. Restoring an older snapshot discards subsequent state and
-requires explicit operational approval and reconciliation.
+The preceding compatibility release (`53da050`) accepts extended variants on
+both generation methods. Before deploying this release, deploy that release,
+migrate every consumer sending extended variants to `generate_rand_seed_v2`,
+and verify that no such consumer still calls the original method. Existing
+consumers that use only legacy variants need no migration. Verify legacy
+generation and both query versions in the target environments and retain a
+recovery snapshot.
+
+Once a new-variant seed has been stored, do not roll back to a canister that
+cannot decode it; roll back consumers independently or deploy a compatible
+release. Restoring an older snapshot discards subsequent state and requires
+explicit operational approval and reconciliation.
 
 ## Repository structure
 
