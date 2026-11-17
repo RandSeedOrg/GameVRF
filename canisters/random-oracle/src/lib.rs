@@ -25,6 +25,8 @@ use serde::Deserialize;
 
 #[cfg(feature = "sensitive_debug_api")]
 use crate::transport_structures::SeedPoolStatus;
+#[cfg(test)]
+use crate::transport_structures::{LegacyBusinessType, LegacyScene};
 use crate::{
   ic_rand_utils::get_on_chain_seed,
   memory_ids::{
@@ -32,7 +34,7 @@ use crate::{
     SEED_POOL_CONFIG_MEMORY_ID,
   },
   stable_structures::{BusinessType, RandSeed, Scene, SeedPoolConfig},
-  transport_structures::RandSeedVO,
+  transport_structures::{LegacyRandSeedVO, RandSeedVO},
 };
 
 mod ic_rand_utils;
@@ -50,6 +52,7 @@ pub type SeedIdGenerator = RefCell<Cell<RandSeedId, Memory>>;
 const AUTHORIZED_CALLERS_NEEDS_SETUP: u8 = 1;
 const AUTHORIZED_CALLERS_READY: u8 = 2;
 const MAX_AUTHORIZED_CALLERS: usize = 100;
+const MAX_V2_SEED_LOOKUP_BATCH: usize = 100;
 const AUTHORIZED_CALLER_MANAGEMENT_PERMISSION: &str = "random_oracle::authorized_caller::manage";
 
 #[derive(CandidType, Deserialize)]
@@ -222,14 +225,24 @@ fn validate_initial_authorized_callers(principals: Vec<Principal>) -> Result<BTr
 
 fn initialize_authorized_callers_from_config(principals: Vec<Principal>) -> Result<(), String> {
   let state = AUTHORIZED_CALLERS_SETUP_STATE.with(|state| *state.borrow().get());
-  if state == AUTHORIZED_CALLERS_READY {
-    return Ok(());
-  }
-  if state != AUTHORIZED_CALLERS_NEEDS_SETUP {
+  if state != AUTHORIZED_CALLERS_READY && state != AUTHORIZED_CALLERS_NEEDS_SETUP {
     return Err("Authorized callers are not ready for initialization".to_string());
   }
 
   let unique_principals = validate_initial_authorized_callers(principals)?;
+  if state == AUTHORIZED_CALLERS_READY {
+    let matches = AUTHORIZED_CALLERS.with(|callers| {
+      let callers = callers.borrow();
+      callers.len() == unique_principals.len() as u64
+        && unique_principals.iter().all(|principal| callers.contains_key(principal))
+    });
+    return if matches {
+      Ok(())
+    } else {
+      Err("Authorized callers already initialized with a different set; reconcile through authorized caller management".to_string())
+    };
+  }
+
   AUTHORIZED_CALLERS.with(|callers| -> Result<(), String> {
     let mut map = callers.borrow_mut();
     let added_count = unique_principals.iter().filter(|principal| !map.contains_key(principal)).count();
@@ -264,6 +277,7 @@ fn inspect_message() {
   let method = msg_method_name();
   match method.as_str() {
     "generate_rand_seed"
+    | "generate_rand_seed_v2"
     | "public_rand_seed"
     | "public_rand_seeds"
     | "update_seed_pool_config"
@@ -323,6 +337,12 @@ async fn acquire_seed_from_pool() -> RawSeed {
 
 #[update(guard = "require_authorized_caller")]
 async fn generate_rand_seed(use_for: BusinessType, scene: Scene) -> RandSeedVO {
+  let seed = acquire_seed_from_pool().await;
+  store_rand_seed(seed, use_for, scene)
+}
+
+#[update(guard = "require_authorized_caller")]
+async fn generate_rand_seed_v2(use_for: BusinessType, scene: Scene) -> RandSeedVO {
   let seed = acquire_seed_from_pool().await;
   store_rand_seed(seed, use_for, scene)
 }
@@ -491,7 +511,20 @@ fn public_rand_seeds(indexes: Vec<u64>) -> Result<(), String> {
 }
 
 #[query]
-fn get_public_rand_seed(index: u64) -> Option<RandSeedVO> {
+fn get_public_rand_seed(index: u64) -> Option<LegacyRandSeedVO> {
+  get_public_rand_seed_v2(index)?.try_into().ok()
+}
+
+#[query]
+fn get_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<LegacyRandSeedVO>> {
+  lookup_public_rand_seeds(indexes)
+    .into_iter()
+    .map(|seed| seed.and_then(|seed| seed.try_into().ok()))
+    .collect()
+}
+
+#[query]
+fn get_public_rand_seed_v2(index: u64) -> Option<RandSeedVO> {
   RAND_SEED_MAP.with(|seeds| {
     let seed = seeds.borrow().get(&index)?;
     if seed.public_time.is_none() {
@@ -502,7 +535,14 @@ fn get_public_rand_seed(index: u64) -> Option<RandSeedVO> {
 }
 
 #[query]
-fn get_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
+fn get_public_rand_seeds_v2(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
+  if indexes.len() > MAX_V2_SEED_LOOKUP_BATCH {
+    ic_cdk::trap("At most 100 seed IDs may be queried at once");
+  }
+  lookup_public_rand_seeds(indexes)
+}
+
+fn lookup_public_rand_seeds(indexes: Vec<u64>) -> Vec<Option<RandSeedVO>> {
   RAND_SEED_MAP.with(|seeds| {
     let seeds = seeds.borrow();
     indexes
@@ -659,6 +699,167 @@ mod tests {
   }
 
   #[test]
+  fn extended_generation_wire_format_decodes_for_legacy_values() {
+    let businesses = [
+      LegacyBusinessType::LuckyNickel, LegacyBusinessType::QuickQuid, LegacyBusinessType::RoyalTreys,
+      LegacyBusinessType::Daily4, LegacyBusinessType::Mines, LegacyBusinessType::Keno,
+      LegacyBusinessType::FruitsGarden, LegacyBusinessType::Roulette,
+    ];
+    let scenes = [LegacyScene::GenerateTicketPool, LegacyScene::Shuffle, LegacyScene::DrawNumbers];
+    for business in businesses {
+      for scene in &scenes {
+        let args = candid::encode_args((business.clone(), scene.clone())).unwrap();
+        let (use_for, decoded_scene): (BusinessType, Scene) = candid::decode_args(&args).unwrap();
+        let response = RandSeedVO::from(RandSeed {
+          idx: Some(1),
+          seed: Some([42; 32]),
+          public_time: None,
+          create_time: Some(5),
+          created_by: Some(sample_principal(9)),
+          use_for: Some(use_for),
+          scene: Some(decoded_scene),
+        });
+        let bytes = candid::encode_one(response).unwrap();
+        let legacy: LegacyRandSeedVO = candid::decode_one(&bytes).unwrap();
+        assert_eq!(legacy.use_for, business);
+        assert_eq!(&legacy.scene, scene);
+      }
+    }
+
+    let args = candid::encode_args((BusinessType::GameCreator, Scene::MatchSeed)).unwrap();
+    let (business, scene): (BusinessType, Scene) = candid::decode_args(&args).unwrap();
+    assert_eq!(business, BusinessType::GameCreator);
+    assert_eq!(scene, Scene::MatchSeed);
+    let response = RandSeedVO::from(RandSeed {
+      idx: Some(2),
+      seed: Some([42; 32]),
+      public_time: None,
+      create_time: Some(5),
+      created_by: Some(sample_principal(9)),
+      use_for: Some(business),
+      scene: Some(scene),
+    });
+    let bytes = candid::encode_one(response).unwrap();
+    let extended: RandSeedVO = candid::decode_one(&bytes).unwrap();
+    assert_eq!(extended.use_for, BusinessType::GameCreator);
+    assert_eq!(extended.scene, Scene::MatchSeed);
+    assert!(candid::decode_one::<LegacyRandSeedVO>(&bytes).is_err());
+  }
+
+  #[test]
+  fn public_seed_queries_keep_legacy_variants_and_hide_new_variants() {
+    reset_test_state();
+    let records = [
+      (1, BusinessType::Daily4, Scene::DrawNumbers, Some(10)),
+      (2, BusinessType::GameCreator, Scene::DrawNumbers, Some(10)),
+      (3, BusinessType::Daily4, Scene::MatchSeed, Some(10)),
+      (4, BusinessType::GameCreator, Scene::MatchSeed, Some(10)),
+      (5, BusinessType::Daily4, Scene::DrawNumbers, None),
+    ];
+    RAND_SEED_MAP.with(|seeds| {
+      let mut seeds = seeds.borrow_mut();
+      for (idx, use_for, scene, public_time) in records {
+        seeds.insert(idx, RandSeed {
+          idx: Some(idx),
+          seed: Some([idx as u8; 32]),
+          public_time,
+          create_time: Some(5),
+          created_by: Some(sample_principal(9)),
+          use_for: Some(use_for),
+          scene: Some(scene),
+        });
+      }
+    });
+
+    let legacy = get_public_rand_seed(1).unwrap();
+    assert_eq!(legacy.use_for, LegacyBusinessType::Daily4);
+    assert_eq!(legacy.scene, LegacyScene::DrawNumbers);
+    let legacy_batch = get_public_rand_seeds(vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(legacy_batch.iter().map(Option::is_some).collect::<Vec<_>>(), vec![true, false, false, false, false, false]);
+    let encoded = candid::encode_one(legacy_batch).unwrap();
+    let decoded: Vec<Option<LegacyRandSeedVO>> = candid::decode_one(&encoded).unwrap();
+    assert_eq!(decoded[0].as_ref().unwrap().idx, 1);
+    assert!(decoded[1..].iter().all(Option::is_none));
+
+    let v2 = get_public_rand_seed_v2(4).unwrap();
+    assert_eq!(v2.use_for, BusinessType::GameCreator);
+    assert_eq!(v2.scene, Scene::MatchSeed);
+    let v2_batch = get_public_rand_seeds_v2(vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(v2_batch.iter().map(Option::is_some).collect::<Vec<_>>(), vec![true, true, true, true, false, false]);
+    reset_test_state();
+  }
+
+  #[test]
+  fn legacy_seed_method_types_are_compatible_with_old_client_idl() {
+    #[allow(dead_code)]
+    #[derive(CandidType)]
+    enum OldBusinessType {
+      LuckyNickel, QuickQuid, RoyalTreys, Daily4, Mines, Keno, FruitsGarden, Roulette,
+    }
+    #[allow(dead_code)]
+    #[derive(CandidType)]
+    enum OldScene { GenerateTicketPool, Shuffle, DrawNumbers }
+    #[derive(CandidType)]
+    struct OldRandSeedVO {
+      idx: u64,
+      seed: [u8; 32],
+      public_time: u64,
+      create_time: u64,
+      created_by: String,
+      use_for: OldBusinessType,
+      scene: OldScene,
+    }
+    #[derive(CandidType)]
+    struct OldStableSeed {
+      idx: Option<u64>,
+      seed: Option<[u8; 32]>,
+      public_time: Option<u64>,
+      create_time: Option<u64>,
+      created_by: Option<Principal>,
+      use_for: Option<OldBusinessType>,
+      scene: Option<OldScene>,
+    }
+
+    let old_record = OldStableSeed {
+      idx: Some(12),
+      seed: Some([42; 32]),
+      public_time: Some(10),
+      create_time: Some(5),
+      created_by: Some(sample_principal(9)),
+      use_for: Some(OldBusinessType::Daily4),
+      scene: Some(OldScene::DrawNumbers),
+    };
+    let bytes = candid::encode_one(old_record).unwrap();
+    let upgraded = RandSeed::from_bytes(std::borrow::Cow::Owned(bytes));
+    assert_eq!(upgraded.get_idx(), 12);
+    assert_eq!(upgraded.get_use_for(), BusinessType::Daily4);
+    assert_eq!(upgraded.get_scene(), Scene::DrawNumbers);
+
+    use candid::types::subtype::{subtype_with_config, Gamma, OptReport};
+    use candid::types::TypeEnv;
+    let pairs = [
+      (
+        candid::func!((u64) -> (Option<LegacyRandSeedVO>) query),
+        candid::func!((u64) -> (Option<OldRandSeedVO>) query),
+      ),
+      (
+        candid::func!((Vec<u64>) -> (Vec<Option<LegacyRandSeedVO>>) query),
+        candid::func!((Vec<u64>) -> (Vec<Option<OldRandSeedVO>>) query),
+      ),
+    ];
+    for (new_type, old_type) in pairs {
+      subtype_with_config(OptReport::Error, &mut Gamma::new(), &TypeEnv::new(), &new_type, &old_type).unwrap();
+    }
+  }
+
+  #[test]
+  fn v2_seed_batch_rejects_more_than_100_ids_without_limiting_legacy_queries() {
+    assert_eq!(get_public_rand_seeds_v2(vec![0; 100]).len(), 100);
+    assert!(std::panic::catch_unwind(|| get_public_rand_seeds_v2(vec![0; 101])).is_err());
+    assert_eq!(get_public_rand_seeds(vec![0; 101]).len(), 101);
+  }
+
+  #[test]
   fn upgrade_discards_unverified_callers_and_initialization_is_explicit_and_idempotent() {
     reset_test_state();
     let unverified_caller = sample_principal(1);
@@ -673,10 +874,19 @@ mod tests {
     assert_eq!(AUTHORIZED_CALLERS_SETUP_STATE.with(|state| *state.borrow().get()), AUTHORIZED_CALLERS_NEEDS_SETUP);
 
     initialize_authorized_callers_from_config(vec![trusted_caller]).unwrap();
-    initialize_authorized_callers_from_config(vec![ignored_caller]).unwrap();
+    initialize_authorized_callers_from_config(vec![trusted_caller, trusted_caller]).unwrap();
+    assert!(initialize_authorized_callers_from_config(vec![ignored_caller]).is_err());
+    assert!(initialize_authorized_callers_from_config(vec![trusted_caller, ignored_caller]).is_err());
+    assert!(initialize_authorized_callers_from_config(Vec::new()).is_err());
     assert!(is_whitelisted(&trusted_caller));
     assert!(!is_whitelisted(&unverified_caller));
     assert!(!is_whitelisted(&ignored_caller));
+    AUTHORIZED_CALLERS.with(|callers| {
+      callers.borrow_mut().insert(ignored_caller, ());
+    });
+    assert!(initialize_authorized_callers_from_config(vec![trusted_caller]).is_err());
+    assert!(is_whitelisted(&ignored_caller));
+    initialize_authorized_callers_from_config(vec![ignored_caller, trusted_caller]).unwrap();
     prepare_authorized_callers_for_upgrade();
     assert!(is_whitelisted(&trusted_caller));
   }
